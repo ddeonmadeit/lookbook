@@ -24,8 +24,10 @@ const AppContent = () => {
     loadSettings();
   }, [loadSettings]);
   useCartSync();
+  // Respect Vite's base path so the app works under a subpath (e.g. GitHub Pages /lookbook/).
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "");
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/about" element={<About />} />

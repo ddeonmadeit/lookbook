@@ -5,7 +5,12 @@ import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
+// Base path: "/" for custom hosts (Vercel/Netlify/etc.), "/lookbook/" for
+// GitHub Pages project sites. Set via the VITE_BASE env var at build time.
+const BASE = process.env.VITE_BASE || "/";
+
 export default defineConfig(({ mode }) => ({
+  base: BASE,
   server: {
     host: "::",
     port: 8080,
@@ -32,7 +37,7 @@ export default defineConfig(({ mode }) => ({
         background_color: "#0f0e0d",
         display: "standalone",
         orientation: "portrait",
-        start_url: "/",
+        start_url: BASE,
         icons: [
           {
             src: "/favicon.ico",
