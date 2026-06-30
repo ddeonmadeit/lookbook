@@ -1,40 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { type ShopifyProduct, storefrontApiRequest, PRODUCTS_QUERY } from "@/lib/shopify";
+import { type ShopifyProduct } from "@/lib/shopify";
+import { getStorefront } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { Navbar } from "@/components/Navbar";
 import loadingSpinner from "@/assets/loading-spinner.gif";
 
 const COLUMN_STEPS = [5, 4, 3]; // 5 cols (zoom out) → 3 cols (zoom in)
 const DEFAULT_INDEX = 2; // 3 columns default
-
-// Exact order from knotsss.com/collections/all
-const HANDLE_ORDER = [
-  "untitled-oct1_21-14",
-  "sttu-teeshirt",
-  "crescent-raw-denim",
-  "palm-hoodie",
-  "the-shoodie®",
-  "bulletproof-vest",
-  "squid-ink-thermal",
-  "the-magnum-opus-leather-jacket",
-  "camo-mohair-sweater",
-  "crescent-washed-straight-leg-jeans",
-  "sea-reactive-hoodies",
-  "sea-washed-sweatpants-unisex",
-  "cactus-button-up",
-  "tan-jorts",
-  "pearl-jorts",
-  "totem-tee-reversible",
-  "flared-1-1-jeans",
-  "mohair-knit",
-  "patch-switch-hoodie",
-  
-  "bleko-x-knots-tee",
-  "patch-switch-trucker-hat",
-  "camo-jersey",
-  "tropic-thunder-t-shirt",
-  "rippleshorts",
-];
 
 const Index = () => {
   const [products, setProducts] = useState<ShopifyProduct[]>([]);
@@ -51,31 +23,9 @@ const Index = () => {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const data = await storefrontApiRequest(PRODUCTS_QUERY, {
-          first: 50,
-        });
-        const edges = data?.data?.products?.edges || [];
-        const allProducts = edges.map((edge: { node: ShopifyProduct["node"] }) => ({ node: edge.node }));
-        
-        // Build a global creation-order map: sort ALL products by createdAt, assign 001, 002, etc.
-        const sorted = [...allProducts].sort((a: ShopifyProduct, b: ShopifyProduct) => {
-          const dateA = a.node.createdAt || '';
-          const dateB = b.node.createdAt || '';
-          return dateA.localeCompare(dateB);
-        });
-        const orderMap: Record<string, string> = {};
-        sorted.forEach((p: ShopifyProduct, i: number) => {
-          orderMap[p.node.handle] = String(i + 1).padStart(3, '0');
-        });
-        setCreationOrderMap(orderMap);
-
-        // Filter to only handles in HANDLE_ORDER, then sort by that order
-        const handleSet = new Set(HANDLE_ORDER);
-        const filtered = allProducts.filter((p: ShopifyProduct) => handleSet.has(p.node.handle));
-        filtered.sort((a: ShopifyProduct, b: ShopifyProduct) => 
-          HANDLE_ORDER.indexOf(a.node.handle) - HANDLE_ORDER.indexOf(b.node.handle)
-        );
-        setProducts(filtered);
+        const { products, displayNumbers } = await getStorefront();
+        setCreationOrderMap(displayNumbers);
+        setProducts(products);
       } catch (error) {
         console.error("Failed to fetch products:", error);
       } finally {

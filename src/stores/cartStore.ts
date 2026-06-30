@@ -10,8 +10,20 @@ import {
   updateShopifyCartLine,
   removeLineFromShopifyCart,
 } from '@/lib/shopify';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 export type { CartItem, ShopifyProduct };
+
+function isManual() {
+  return useSettingsStore.getState().productSource === 'manual';
+}
+
+function newLineId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `line_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  );
+}
 
 interface CartStore {
   items: CartItem[];
@@ -39,6 +51,22 @@ export const useCartStore = create<CartStore>()(
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
         const existingItem = items.find(i => i.variantId === item.variantId);
+
+        // Manual source: a purely local cart, checkout happens via /checkout.
+        if (isManual()) {
+          if (existingItem) {
+            set({
+              items: items.map(i =>
+                i.variantId === item.variantId
+                  ? { ...i, quantity: i.quantity + item.quantity }
+                  : i,
+              ),
+            });
+          } else {
+            set({ items: [...items, { ...item, lineId: newLineId() }] });
+          }
+          return;
+        }
 
         set({ isLoading: true });
         try {
@@ -80,6 +108,12 @@ export const useCartStore = create<CartStore>()(
           await get().removeItem(variantId);
           return;
         }
+
+        if (isManual()) {
+          set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
+          return;
+        }
+
         const { items, cartId, clearCart } = get();
         const item = items.find(i => i.variantId === variantId);
         if (!item?.lineId || !cartId) return;
@@ -100,6 +134,13 @@ export const useCartStore = create<CartStore>()(
       },
 
       removeItem: async (variantId) => {
+        if (isManual()) {
+          const newItems = get().items.filter(i => i.variantId !== variantId);
+          if (newItems.length === 0) get().clearCart();
+          else set({ items: newItems });
+          return;
+        }
+
         const { items, cartId, clearCart } = get();
         const item = items.find(i => i.variantId === variantId);
         if (!item?.lineId || !cartId) return;
@@ -109,7 +150,8 @@ export const useCartStore = create<CartStore>()(
           const result = await removeLineFromShopifyCart(cartId, item.lineId);
           if (result.success) {
             const newItems = get().items.filter(i => i.variantId !== variantId);
-            newItems.length === 0 ? clearCart() : set({ items: newItems });
+            if (newItems.length === 0) clearCart();
+            else set({ items: newItems });
           } else if (result.cartNotFound) {
             clearCart();
           }
@@ -124,6 +166,8 @@ export const useCartStore = create<CartStore>()(
       getCheckoutUrl: () => get().checkoutUrl,
 
       syncCart: async () => {
+        if (isManual()) return;
+
         const { cartId, isSyncing, clearCart } = get();
         if (!cartId || isSyncing) return;
         set({ isSyncing: true });

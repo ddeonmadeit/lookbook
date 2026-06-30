@@ -50,6 +50,15 @@ npm run dev
 - Click on "New codespace" to launch a new Codespace environment.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
+## Backend product dashboard
+
+This storefront includes an admin dashboard at `/admin` for **manually managing
+products** (backed by Supabase), with Shopify available as an optional source you
+can switch on later. It ships in manual mode by default.
+
+See **[DASHBOARD.md](./DASHBOARD.md)** for setup (database migration, creating
+your admin account) and usage.
+
 ## What technologies are used for this project?
 
 This project is built with:

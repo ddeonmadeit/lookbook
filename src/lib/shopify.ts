@@ -1,9 +1,17 @@
 import { toast } from "sonner";
+import { useSettingsStore } from "@/stores/settingsStore";
 
-const SHOPIFY_API_VERSION = '2025-07';
-const SHOPIFY_STORE_PERMANENT_DOMAIN = 'ca653b-54.myshopify.com';
-const SHOPIFY_STOREFRONT_URL = `https://${SHOPIFY_STORE_PERMANENT_DOMAIN}/api/${SHOPIFY_API_VERSION}/graphql.json`;
-const SHOPIFY_STOREFRONT_TOKEN = '847bb7089d786a2dd3a8cf057a4351f7';
+// Shopify connection details come from the store settings (configurable in the
+// admin dashboard). The settings store holds sensible fallbacks if nothing has
+// been configured yet.
+function getShopifyConfig() {
+  const { shopifyDomain, shopifyStorefrontToken, shopifyApiVersion } =
+    useSettingsStore.getState();
+  return {
+    url: `https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`,
+    token: shopifyStorefrontToken,
+  };
+}
 
 export interface ShopifyProduct {
   node: {
@@ -52,11 +60,12 @@ export interface ShopifyProduct {
 }
 
 export async function storefrontApiRequest(query: string, variables: Record<string, unknown> = {}) {
-  const response = await fetch(SHOPIFY_STOREFRONT_URL, {
+  const { url, token } = getShopifyConfig();
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN,
+      'X-Shopify-Storefront-Access-Token': token,
     },
     body: JSON.stringify({ query, variables }),
   });

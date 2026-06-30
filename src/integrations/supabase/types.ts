@@ -41,6 +41,126 @@ export type Database = {
         }
         Relationships: []
       }
+      products: {
+        Row: {
+          id: string
+          handle: string
+          title: string
+          description: string | null
+          description_html: string | null
+          price: number
+          currency: string
+          images: Json
+          options: Json
+          variants: Json
+          available: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          handle: string
+          title: string
+          description?: string | null
+          description_html?: string | null
+          price?: number
+          currency?: string
+          images?: Json
+          options?: Json
+          variants?: Json
+          available?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          handle?: string
+          title?: string
+          description?: string | null
+          description_html?: string | null
+          price?: number
+          currency?: string
+          images?: Json
+          options?: Json
+          variants?: Json
+          available?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      store_settings: {
+        Row: {
+          id: number
+          product_source: string
+          shopify_domain: string | null
+          shopify_storefront_token: string | null
+          shopify_api_version: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          product_source?: string
+          shopify_domain?: string | null
+          shopify_storefront_token?: string | null
+          shopify_api_version?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          product_source?: string
+          shopify_domain?: string | null
+          shopify_storefront_token?: string | null
+          shopify_api_version?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          id: string
+          items: Json
+          subtotal: number
+          currency: string
+          customer_name: string
+          customer_email: string
+          customer_phone: string | null
+          shipping_address: string | null
+          notes: string | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          items?: Json
+          subtotal?: number
+          currency?: string
+          customer_name: string
+          customer_email: string
+          customer_phone?: string | null
+          shipping_address?: string | null
+          notes?: string | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          items?: Json
+          subtotal?: number
+          currency?: string
+          customer_name?: string
+          customer_email?: string
+          customer_phone?: string | null
+          shipping_address?: string | null
+          notes?: string | null
+          status?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

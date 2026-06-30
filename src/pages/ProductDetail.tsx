@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { type ShopifyProduct, storefrontApiRequest, PRODUCTS_QUERY } from "@/lib/shopify";
+import { type ShopifyProduct } from "@/lib/shopify";
+import { getProducts } from "@/lib/products";
 import { useCartStore } from "@/stores/cartStore";
 import { Navbar } from "@/components/Navbar";
 import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
@@ -78,13 +79,7 @@ const ProductDetail = () => {
   useEffect(() => {
     async function fetchAll() {
       try {
-        const data = await storefrontApiRequest(PRODUCTS_QUERY, {
-          first: 50,
-          query: "collection:MAIN",
-        });
-
-        const edges = data?.data?.products?.edges || [];
-        const products = edges.map((e: { node: ShopifyProduct["node"] }) => ({ node: e.node }));
+        const products = await getProducts();
         setAllProducts(products);
 
         const idx = products.findIndex((p: ShopifyProduct) => p.node.handle === handle);

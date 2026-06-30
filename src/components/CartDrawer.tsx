@@ -1,8 +1,10 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, Trash2, Loader2, X } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 // Bag icon matching yeezy.com style
 const BagIcon = ({ className }: { className?: string }) => (
@@ -22,14 +24,23 @@ const BagIcon = ({ className }: { className?: string }) => (
 );
 
 export const CartDrawer = () => {
+  const navigate = useNavigate();
   const { cartOpen: isOpen, setCartOpen: setIsOpen, menuOpen } = useUIStore();
   const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart } = useCartStore();
+  const productSource = useSettingsStore((s) => s.productSource);
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const totalPrice = items.reduce((sum, item) => sum + (parseFloat(item.price.amount) * item.quantity), 0);
 
   useEffect(() => { if (isOpen) syncCart(); }, [isOpen, syncCart]);
 
   const handleCheckout = () => {
+    // Manual catalog: collect order details on our own checkout page.
+    if (productSource === "manual") {
+      setIsOpen(false);
+      navigate("/checkout");
+      return;
+    }
+    // Shopify: hand off to the hosted Shopify checkout.
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
       window.open(checkoutUrl, '_blank');
