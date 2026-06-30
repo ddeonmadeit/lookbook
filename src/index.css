@@ -1,0 +1,178 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 27 100% 97%;
+    --foreground: 20 12% 18%;
+
+    --card: 15 50% 97%;
+    --card-foreground: 30 10% 10%;
+
+    --popover: 30 33% 96%;
+    --popover-foreground: 30 10% 10%;
+
+    --primary: 30 10% 10%;
+    --primary-foreground: 30 33% 96%;
+
+    --secondary: 30 20% 90%;
+    --secondary-foreground: 30 10% 10%;
+
+    --muted: 30 15% 88%;
+    --muted-foreground: 20 8% 42%;
+
+    --accent: 40 90% 55%;
+    --accent-foreground: 30 10% 10%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 30 20% 88%;
+    --input: 30 20% 88%;
+    --ring: 30 10% 10%;
+
+    --radius: 0rem;
+
+    --sidebar-background: 30 20% 92%;
+    --sidebar-foreground: 30 10% 10%;
+    --sidebar-primary: 30 10% 10%;
+    --sidebar-primary-foreground: 30 33% 96%;
+    --sidebar-accent: 30 15% 88%;
+    --sidebar-accent-foreground: 30 10% 10%;
+    --sidebar-border: 30 20% 88%;
+    --sidebar-ring: 30 10% 10%;
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
+
+  .dark {
+    --background: 30 8% 6%;
+    --foreground: 30 15% 90%;
+    --card: 30 8% 10%;
+    --card-foreground: 30 15% 90%;
+    --popover: 30 8% 6%;
+    --popover-foreground: 30 15% 90%;
+    --primary: 30 15% 90%;
+    --primary-foreground: 30 8% 6%;
+    --secondary: 30 8% 14%;
+    --secondary-foreground: 30 15% 90%;
+    --muted: 30 8% 14%;
+    --muted-foreground: 30 10% 55%;
+    --accent: 40 90% 55%;
+    --accent-foreground: 30 15% 90%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 30 8% 18%;
+    --input: 30 8% 18%;
+    --ring: 30 15% 90%;
+    --sidebar-background: 30 8% 6%;
+    --sidebar-foreground: 30 15% 90%;
+    --sidebar-primary: 30 15% 90%;
+    --sidebar-primary-foreground: 30 8% 6%;
+    --sidebar-accent: 30 8% 14%;
+    --sidebar-accent-foreground: 30 15% 90%;
+    --sidebar-border: 30 8% 18%;
+    --sidebar-ring: 30 15% 90%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: pan-x pan-y;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    overscroll-behavior: none;
+    overflow: hidden;
+    height: 100%;
+    margin: 0;
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+
+  img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  .logo-bounce {
+    animation: logo-float 3s ease-in-out infinite;
+  }
+}
+
+@keyframes logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes mystery-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-mystery-scroll {
+  animation: mystery-scroll 8s linear infinite;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.25s ease-out;
+}

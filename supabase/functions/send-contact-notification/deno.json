@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "@lovable.dev/email-js": "npm:@lovable.dev/email-js"
+  }
+}
