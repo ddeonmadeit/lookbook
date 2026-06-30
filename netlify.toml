@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback so deep links (/admin, /product/:handle) resolve to the app.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
