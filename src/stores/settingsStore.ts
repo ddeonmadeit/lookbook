@@ -16,6 +16,7 @@ export interface StoreSettings {
   shopifyStorefrontToken: string;
   shopifyApiVersion: string;
   siteMode: SiteMode;
+  paymentsEnabled: boolean;
 }
 
 interface SettingsState extends StoreSettings {
@@ -33,6 +34,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // Gated by default until settings load, so a slow/failed load never
   // accidentally exposes the storefront before the owner is ready.
   siteMode: "coming_soon",
+  paymentsEnabled: false,
   loaded: false,
   loading: false,
 
@@ -53,6 +55,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           shopifyStorefrontToken: data.shopify_storefront_token || DEFAULT_SHOPIFY_TOKEN,
           shopifyApiVersion: data.shopify_api_version || DEFAULT_SHOPIFY_API_VERSION,
           siteMode: (data.site_mode as SiteMode) ?? "coming_soon",
+          paymentsEnabled: data.payments_enabled ?? false,
         });
       }
     } catch (err) {
@@ -73,6 +76,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         shopify_storefront_token: next.shopifyStorefrontToken || null,
         shopify_api_version: next.shopifyApiVersion,
         site_mode: next.siteMode,
+        payments_enabled: next.paymentsEnabled,
       });
 
     if (error) return { error: error.message };
@@ -83,6 +87,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       shopifyStorefrontToken: next.shopifyStorefrontToken,
       shopifyApiVersion: next.shopifyApiVersion,
       siteMode: next.siteMode,
+      paymentsEnabled: next.paymentsEnabled,
     });
     return { error: null };
   },
@@ -101,5 +106,6 @@ export async function ensureSettings(): Promise<StoreSettings> {
     shopifyStorefrontToken: s.shopifyStorefrontToken,
     shopifyApiVersion: s.shopifyApiVersion,
     siteMode: s.siteMode,
+    paymentsEnabled: s.paymentsEnabled,
   };
 }

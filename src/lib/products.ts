@@ -23,6 +23,8 @@ export interface ManualVariant {
   title: string;
   price: number;
   available: boolean;
+  /** Remaining units; null = not tracked (availability driven by `available` alone). */
+  stock?: number | null;
   selectedOptions: Array<{ name: string; value: string }>;
 }
 export interface ProductRow {
@@ -115,6 +117,7 @@ function manualRowToProduct(row: ProductRow): ShopifyProduct {
             title: v.title,
             price: { amount: String(v.price), currencyCode: currency },
             availableForSale: v.available,
+            stock: v.stock ?? null,
             selectedOptions: v.selectedOptions || [],
           },
         })),

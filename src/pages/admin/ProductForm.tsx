@@ -18,13 +18,8 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-/** Cartesian product of the defined options → concrete variants. */
-function buildVariants(
-  options: ManualOption[],
-  price: number,
-  handle: string,
-  available: boolean,
-): ManualVariant[] {
+/** Cartesian product of the defined options → variant titles + selections. */
+function buildCombos(options: ManualOption[]) {
   const real = options
     .map((o) => ({ name: o.name.trim(), values: o.values.filter((v) => v.trim()) }))
     .filter((o) => o.name && o.values.length);
@@ -43,12 +38,35 @@ function buildVariants(
   }
 
   return combos.map((selectedOptions) => ({
-    id: `${handle}::${selectedOptions.map((s) => s.value).join("/")}`,
     title: selectedOptions.map((s) => s.value).join(" / "),
-    price,
-    available,
     selectedOptions,
   }));
+}
+
+/**
+ * Concrete variants from options + per-variant stock. A blank stock value
+ * means "not tracked": availability follows the product's In-stock switch.
+ * A numeric stock drives availability automatically (0 = sold out).
+ */
+function buildVariants(
+  options: ManualOption[],
+  price: number,
+  handle: string,
+  available: boolean,
+  stockByTitle: Record<string, string>,
+): ManualVariant[] {
+  return buildCombos(options).map(({ title, selectedOptions }) => {
+    const raw = (stockByTitle[title] ?? "").trim();
+    const stock = raw === "" ? null : Math.max(0, parseInt(raw, 10) || 0);
+    return {
+      id: `${handle}::${selectedOptions.map((s) => s.value).join("/")}`,
+      title,
+      price,
+      available: stock !== null ? stock > 0 : available,
+      stock,
+      selectedOptions,
+    };
+  });
 }
 
 interface ProductFormProps {
@@ -71,6 +89,15 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
   const [options, setOptions] = useState<Array<{ name: string; valuesText: string }>>(
     (product?.options ?? []).map((o) => ({ name: o.name, valuesText: o.values.join(", ") })),
   );
+  // Per-variant stock, keyed by variant title ("" key = single default variant).
+  const [stockByTitle, setStockByTitle] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    (product?.variants ?? []).forEach((v) => {
+      const key = v.title === "Default Title" ? "" : v.title;
+      map[key] = v.stock === null || v.stock === undefined ? "" : String(v.stock);
+    });
+    return map;
+  });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -130,7 +157,22 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
       }))
       .filter((o) => o.name && o.values.length);
 
-    const variants = buildVariants(parsedOptions, priceNum, finalHandle, available);
+    let variants = buildVariants(parsedOptions, priceNum, finalHandle, available, stockByTitle);
+    // No options but a stock number set: create the single default variant so
+    // stock can still be tracked.
+    if (variants.length === 0 && (stockByTitle[""] ?? "").trim() !== "") {
+      const stock = Math.max(0, parseInt(stockByTitle[""], 10) || 0);
+      variants = [
+        {
+          id: `${finalHandle}::default`,
+          title: "Default Title",
+          price: priceNum,
+          available: stock > 0,
+          stock,
+          selectedOptions: [],
+        },
+      ];
+    }
 
     const payload = {
       handle: finalHandle,
@@ -294,6 +336,46 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
             No options — the product is sold as a single variant.
           </p>
         )}
+      </div>
+
+      {/* Inventory */}
+      <div className="space-y-2">
+        <Label className={inputLabel}>Inventory</Label>
+        {(() => {
+          const combos = buildCombos(
+            options.map((o) => ({
+              name: o.name,
+              values: o.valuesText.split(",").map((v) => v.trim()).filter(Boolean),
+            })),
+          );
+          const rows = combos.length > 0 ? combos.map((c) => c.title) : [""];
+          return (
+            <div className="space-y-1.5">
+              {rows.map((title) => (
+                <div key={title || "__default"} className="flex items-center gap-2">
+                  <span className="font-body text-[11px] flex-1 truncate">
+                    {title || "Stock on hand"}
+                  </span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    placeholder="—"
+                    className="w-24 text-right"
+                    value={stockByTitle[title] ?? ""}
+                    onChange={(e) =>
+                      setStockByTitle((prev) => ({ ...prev, [title]: e.target.value }))
+                    }
+                  />
+                </div>
+              ))}
+              <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
+                Leave blank to not track stock (availability follows the In-stock switch).
+                With a number set, items sell out automatically at 0.
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

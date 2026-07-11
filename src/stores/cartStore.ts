@@ -10,12 +10,28 @@ import {
   updateShopifyCartLine,
   removeLineFromShopifyCart,
 } from '@/lib/shopify';
+import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 export type { CartItem, ShopifyProduct };
 
 function isManual() {
   return useSettingsStore.getState().productSource === 'manual';
+}
+
+/** Remaining stock for a cart item's variant; null = untracked. */
+function stockFor(item: Pick<CartItem, 'product' | 'variantId'>): number | null {
+  const variant = item.product.node.variants.edges.find(
+    ({ node }) => node.id === item.variantId,
+  )?.node;
+  return variant?.stock ?? null;
+}
+
+function capToStock(item: Pick<CartItem, 'product' | 'variantId'>, wanted: number): number {
+  const stock = stockFor(item);
+  if (stock === null || wanted <= stock) return wanted;
+  toast.error(stock > 0 ? `Only ${stock} left in stock` : 'Sold out');
+  return stock;
 }
 
 function newLineId() {
@@ -55,15 +71,17 @@ export const useCartStore = create<CartStore>()(
         // Manual source: a purely local cart, checkout happens via /checkout.
         if (isManual()) {
           if (existingItem) {
+            const wanted = capToStock(existingItem, existingItem.quantity + item.quantity);
+            if (wanted <= 0) return;
             set({
               items: items.map(i =>
-                i.variantId === item.variantId
-                  ? { ...i, quantity: i.quantity + item.quantity }
-                  : i,
+                i.variantId === item.variantId ? { ...i, quantity: wanted } : i,
               ),
             });
           } else {
-            set({ items: [...items, { ...item, lineId: newLineId() }] });
+            const wanted = capToStock(item, item.quantity);
+            if (wanted <= 0) return;
+            set({ items: [...items, { ...item, quantity: wanted, lineId: newLineId() }] });
           }
           return;
         }
@@ -110,7 +128,13 @@ export const useCartStore = create<CartStore>()(
         }
 
         if (isManual()) {
-          set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
+          const target = get().items.find(i => i.variantId === variantId);
+          const wanted = target ? capToStock(target, quantity) : quantity;
+          if (wanted <= 0) {
+            await get().removeItem(variantId);
+            return;
+          }
+          set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity: wanted } : i) });
           return;
         }
 

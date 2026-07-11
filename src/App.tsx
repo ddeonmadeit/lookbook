@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
+import { usePageTracking } from "@/hooks/usePageTracking";
 import { useSettingsStore } from "@/stores/settingsStore";
 import Index from "./pages/Index";
 import ComingSoon from "./pages/ComingSoon";
@@ -17,6 +18,7 @@ const ProductDetail = lazy(() => import("./pages/ProductDetail"));
 const About = lazy(() => import("./pages/About"));
 const Contact = lazy(() => import("./pages/Contact"));
 const Checkout = lazy(() => import("./pages/Checkout"));
+const CheckoutSuccess = lazy(() => import("./pages/CheckoutSuccess"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const RequireAdmin = lazy(() => import("./pages/admin/RequireAdmin"));
@@ -36,6 +38,7 @@ const queryClient = new QueryClient();
 // can still log in, manage products, and flip the switch) shows the
 // countdown/early-access page instead of the real storefront.
 const SiteGate = () => {
+  usePageTracking();
   const siteMode = useSettingsStore((s) => s.siteMode);
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
@@ -52,6 +55,7 @@ const SiteGate = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/product/:handle" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
+        <Route path="/checkout/success" element={<CheckoutSuccess />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/admin"

@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
+import OverviewTab from "./OverviewTab";
 
 interface OrderRow {
   id: string;
@@ -70,15 +71,21 @@ const AdminDashboard = () => {
         </Button>
       </header>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        <Tabs defaultValue="products">
-          <TabsList className="mb-6">
-            <TabsTrigger value="products">Products</TabsTrigger>
-            <TabsTrigger value="orders">Orders</TabsTrigger>
-            <TabsTrigger value="signups">Early Access</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <Tabs defaultValue="overview">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-6">
+            <TabsList className="w-max">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="products">Products</TabsTrigger>
+              <TabsTrigger value="orders">Orders</TabsTrigger>
+              <TabsTrigger value="signups">Early Access</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
+          </div>
 
+          <TabsContent value="overview">
+            <OverviewTab />
+          </TabsContent>
           <TabsContent value="products">
             <ProductsTab />
           </TabsContent>
@@ -236,6 +243,8 @@ const ProductsTab = () => {
 /* -------------------------------------------------------------------------- */
 /* Orders                                                                      */
 /* -------------------------------------------------------------------------- */
+const ORDER_STATUSES = ["pending", "paid", "fulfilled", "cancelled"] as const;
+
 const OrdersTab = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -251,6 +260,16 @@ const OrdersTab = () => {
       setLoading(false);
     })();
   }, []);
+
+  const setStatus = async (id: string, status: string) => {
+    const prev = orders;
+    setOrders((os) => os.map((o) => (o.id === id ? { ...o, status } : o)));
+    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+    if (error) {
+      setOrders(prev);
+      toast.error("Could not update order", { description: error.message });
+    }
+  };
 
   if (loading) {
     return (
@@ -283,7 +302,20 @@ const OrdersTab = () => {
               <p className="font-body text-[10px] text-muted-foreground">
                 {new Date(o.created_at).toLocaleDateString()}
               </p>
-              <Badge variant="outline" className="text-[10px] mt-1">{o.status}</Badge>
+              <div className="mt-1 flex justify-end">
+                <Select value={o.status} onValueChange={(v) => setStatus(o.id, v)}>
+                  <SelectTrigger className="h-7 w-[110px] text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ORDER_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s} className="text-[12px]">
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <div className="mt-3 border-t border-border pt-2 space-y-0.5">
@@ -396,6 +428,7 @@ const SettingsTab = () => {
   const [domain, setDomain] = useState(settings.shopifyDomain);
   const [token, setToken] = useState(settings.shopifyStorefrontToken);
   const [apiVersion, setApiVersion] = useState(settings.shopifyApiVersion);
+  const [paymentsEnabled, setPaymentsEnabled] = useState(settings.paymentsEnabled);
   const [saving, setSaving] = useState(false);
 
   // keep local form in sync once settings finish loading
@@ -405,6 +438,7 @@ const SettingsTab = () => {
     setDomain(settings.shopifyDomain);
     setToken(settings.shopifyStorefrontToken);
     setApiVersion(settings.shopifyApiVersion);
+    setPaymentsEnabled(settings.paymentsEnabled);
   }, [settings.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
@@ -415,6 +449,7 @@ const SettingsTab = () => {
       shopifyDomain: domain,
       shopifyStorefrontToken: token,
       shopifyApiVersion: apiVersion,
+      paymentsEnabled,
     });
     setSaving(false);
     if (error) {
@@ -461,6 +496,27 @@ const SettingsTab = () => {
           {source === "manual"
             ? "The storefront shows products you add here, and checkout records orders for you to fulfil."
             : "The storefront pulls products from Shopify and checkout uses Shopify's hosted checkout."}
+        </p>
+      </div>
+
+      <div className="space-y-1.5 border-t border-border pt-5">
+        <Label className={label}>Online payments</Label>
+        <Select
+          value={paymentsEnabled ? "on" : "off"}
+          onValueChange={(v) => setPaymentsEnabled(v === "on")}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="off">Off — record orders, arrange payment yourself</SelectItem>
+            <SelectItem value="on">On — secure card checkout via Stripe</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
+          {paymentsEnabled
+            ? "Checkout sends customers to Stripe's hosted payment page. Requires the Stripe keys to be configured (see PAYMENTS.md in the repo)."
+            : "Checkout records the order and tells the customer you'll contact them to arrange payment."}
         </p>
       </div>
 

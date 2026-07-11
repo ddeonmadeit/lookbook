@@ -100,6 +100,7 @@ export type Database = {
           shopify_storefront_token: string | null
           shopify_api_version: string
           site_mode: string
+          payments_enabled: boolean
           updated_at: string
         }
         Insert: {
@@ -109,6 +110,7 @@ export type Database = {
           shopify_storefront_token?: string | null
           shopify_api_version?: string
           site_mode?: string
+          payments_enabled?: boolean
           updated_at?: string
         }
         Update: {
@@ -118,6 +120,7 @@ export type Database = {
           shopify_storefront_token?: string | null
           shopify_api_version?: string
           site_mode?: string
+          payments_enabled?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -140,6 +143,33 @@ export type Database = {
         }
         Relationships: []
       }
+      page_views: {
+        Row: {
+          id: string
+          session_id: string
+          path: string
+          referrer: string | null
+          device: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_id: string
+          path: string
+          referrer?: string | null
+          device?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_id?: string
+          path?: string
+          referrer?: string | null
+          device?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           id: string
@@ -152,6 +182,9 @@ export type Database = {
           shipping_address: string | null
           notes: string | null
           status: string
+          payment_provider: string
+          payment_id: string | null
+          paid_at: string | null
           created_at: string
         }
         Insert: {
@@ -165,6 +198,9 @@ export type Database = {
           shipping_address?: string | null
           notes?: string | null
           status?: string
+          payment_provider?: string
+          payment_id?: string | null
+          paid_at?: string | null
           created_at?: string
         }
         Update: {
@@ -178,6 +214,9 @@ export type Database = {
           shipping_address?: string | null
           notes?: string | null
           status?: string
+          payment_provider?: string
+          payment_id?: string | null
+          paid_at?: string | null
           created_at?: string
         }
         Relationships: []
@@ -187,7 +226,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      place_order: {
+        Args: {
+          p_items: Json
+          p_subtotal: number
+          p_currency: string
+          p_customer_name: string
+          p_customer_email: string
+          p_customer_phone: string | null
+          p_shipping_address: string | null
+          p_notes: string | null
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

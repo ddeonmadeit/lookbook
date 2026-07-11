@@ -3,6 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!--
+      Content Security Policy: scripts may ONLY come from this site itself —
+      no third-party or injected scripts (i.e. no ads) can ever execute.
+      Styles/fonts: self + Google Fonts. Data: self + Supabase (+ Shopify's
+      API/CDN for the optional Shopify mode). upgrade-insecure-requests turns
+      any stray http:// subresource into https://.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co https://*.myshopify.com https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; upgrade-insecure-requests"
+    />
     <title>Knots</title>
     <meta name="description" content="Natural Streetwear">
     <meta name="author" content="KNOTS" />

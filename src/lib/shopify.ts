@@ -45,6 +45,8 @@ export interface ShopifyProduct {
             currencyCode: string;
           };
           availableForSale: boolean;
+          /** Remaining stock for manual-catalog products; null/undefined = untracked. */
+          stock?: number | null;
           selectedOptions: Array<{
             name: string;
             value: string;

@@ -1,18 +1,19 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { supabase } from "@/integrations/supabase/client";
 
 const Checkout = () => {
-  const navigate = useNavigate();
   const { items, clearCart } = useCartStore();
+  const paymentsEnabled = useSettingsStore((s) => s.paymentsEnabled);
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState(false);
   const [form, setForm] = useState({
@@ -32,6 +33,39 @@ const Checkout = () => {
   const update = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
+  // Online payments: hand off to Stripe's hosted checkout. Card details never
+  // touch this site; prices are re-validated server-side.
+  const handlePay = async () => {
+    setSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: {
+          items: items.map((i) => ({
+            product_id: i.product.node.id,
+            variant_id: i.variantId,
+            quantity: i.quantity,
+          })),
+          success_url: `${window.location.origin}/checkout/success`,
+          cancel_url: `${window.location.origin}/checkout`,
+        },
+      });
+      const url = (data as { url?: string; error?: string } | null)?.url;
+      if (error || !url) {
+        const msg =
+          (data as { error?: string } | null)?.error ||
+          error?.message ||
+          "Payment could not be started.";
+        toast.error("Checkout unavailable", { description: msg });
+        return;
+      }
+      window.location.assign(url);
+    } catch {
+      toast.error("Checkout unavailable", { description: "Please try again." });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim()) {
@@ -46,6 +80,10 @@ const Checkout = () => {
     setSubmitting(true);
     try {
       const orderItems = items.map((i) => ({
+        // product_id ties the line to the manual catalog so the database can
+        // atomically check + decrement stock while creating the order.
+        product_id: i.product.node.id,
+        variant_id: i.variantId,
         title: i.product.node.title,
         handle: i.product.node.handle,
         variantTitle: i.variantTitle,
@@ -55,15 +93,15 @@ const Checkout = () => {
         image: i.product.node.images?.edges?.[0]?.node?.url ?? null,
       }));
 
-      const { error } = await supabase.from("orders").insert({
-        items: orderItems,
-        subtotal,
-        currency,
-        customer_name: form.name.trim(),
-        customer_email: form.email.trim(),
-        customer_phone: form.phone.trim() || null,
-        shipping_address: form.address.trim() || null,
-        notes: form.notes.trim() || null,
+      const { error } = await supabase.rpc("place_order", {
+        p_items: orderItems,
+        p_subtotal: subtotal,
+        p_currency: currency,
+        p_customer_name: form.name.trim(),
+        p_customer_email: form.email.trim(),
+        p_customer_phone: form.phone.trim() || null,
+        p_shipping_address: form.address.trim() || null,
+        p_notes: form.notes.trim() || null,
       });
 
       if (error) {
@@ -149,7 +187,28 @@ const Checkout = () => {
           </div>
         </div>
 
-        {/* Customer details */}
+        {/* Payment: secure Stripe checkout when enabled */}
+        {paymentsEnabled ? (
+          <div className="mt-8 space-y-4">
+            <Button
+              onClick={handlePay}
+              disabled={submitting}
+              className="w-full h-12 text-[11px] uppercase tracking-[0.2em] font-body"
+            >
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 mr-2" /> Pay securely
+                </>
+              )}
+            </Button>
+            <p className="font-body text-[10px] text-muted-foreground text-center leading-relaxed">
+              You'll be taken to Stripe's encrypted checkout to enter payment and
+              shipping details. Card information never touches this site.
+            </p>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">Name *</Label>
@@ -183,6 +242,7 @@ const Checkout = () => {
             No payment is taken here. We'll contact you to arrange payment and delivery.
           </p>
         </form>
+        )}
       </div>
     </div>
   );
