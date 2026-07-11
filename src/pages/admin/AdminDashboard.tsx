@@ -26,10 +26,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, LogOut } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, LogOut, Download } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useSettingsStore, type ProductSource } from "@/stores/settingsStore";
+import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
 
@@ -44,6 +44,12 @@ interface OrderRow {
   shipping_address: string | null;
   notes: string | null;
   status: string;
+  created_at: string;
+}
+
+interface PhoneSignupRow {
+  id: string;
+  phone: string;
   created_at: string;
 }
 
@@ -69,6 +75,7 @@ const AdminDashboard = () => {
           <TabsList className="mb-6">
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="orders">Orders</TabsTrigger>
+            <TabsTrigger value="signups">Early Access</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
@@ -77,6 +84,9 @@ const AdminDashboard = () => {
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab />
+          </TabsContent>
+          <TabsContent value="signups">
+            <SignupsTab />
           </TabsContent>
           <TabsContent value="settings">
             <SettingsTab />
@@ -298,10 +308,90 @@ const OrdersTab = () => {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Early access phone signups (from the "coming soon" gate)                   */
+/* -------------------------------------------------------------------------- */
+const SignupsTab = () => {
+  const [signups, setSignups] = useState<PhoneSignupRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("phone_signups")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) toast.error("Failed to load signups", { description: error.message });
+      setSignups((data as unknown as PhoneSignupRow[]) || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleExport = () => {
+    const csv = ["phone,submitted_at", ...signups.map((s) => `"${s.phone}","${s.created_at}"`)].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "knots-aw26-phones.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
+          {signups.length} number{signups.length !== 1 ? "s" : ""} collected
+        </p>
+        <Button size="sm" variant="outline" onClick={handleExport} disabled={signups.length === 0}>
+          <Download className="w-4 h-4 mr-1" /> Export CSV
+        </Button>
+      </div>
+
+      {signups.length === 0 ? (
+        <p className="font-body text-[12px] text-muted-foreground py-12 text-center">
+          No early-access signups yet.
+        </p>
+      ) : (
+        <div className="border border-border rounded-md overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Phone</TableHead>
+                <TableHead>Submitted</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {signups.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell className="font-body text-[12px]">{s.phone}</TableCell>
+                  <TableCell className="font-body text-[12px] text-muted-foreground">
+                    {new Date(s.created_at).toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
 /* Settings                                                                    */
 /* -------------------------------------------------------------------------- */
 const SettingsTab = () => {
   const settings = useSettingsStore();
+  const [siteMode, setSiteMode] = useState<SiteMode>(settings.siteMode);
   const [source, setSource] = useState<ProductSource>(settings.productSource);
   const [domain, setDomain] = useState(settings.shopifyDomain);
   const [token, setToken] = useState(settings.shopifyStorefrontToken);
@@ -310,6 +400,7 @@ const SettingsTab = () => {
 
   // keep local form in sync once settings finish loading
   useEffect(() => {
+    setSiteMode(settings.siteMode);
     setSource(settings.productSource);
     setDomain(settings.shopifyDomain);
     setToken(settings.shopifyStorefrontToken);
@@ -319,6 +410,7 @@ const SettingsTab = () => {
   const handleSave = async () => {
     setSaving(true);
     const { error } = await settings.save({
+      siteMode,
       productSource: source,
       shopifyDomain: domain,
       shopifyStorefrontToken: token,
@@ -337,6 +429,24 @@ const SettingsTab = () => {
   return (
     <div className="max-w-md space-y-6">
       <div className="space-y-1.5">
+        <Label className={label}>Site visibility</Label>
+        <Select value={siteMode} onValueChange={(v) => setSiteMode(v as SiteMode)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="coming_soon">Coming soon (countdown page)</SelectItem>
+            <SelectItem value="live">Live (full site)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
+          {siteMode === "coming_soon"
+            ? "Visitors see the AW26 countdown / early-access page. Only you (signed in here) can reach the rest of the site."
+            : "The full storefront is visible to everyone."}
+        </p>
+      </div>
+
+      <div className="space-y-1.5 border-t border-border pt-5">
         <Label className={label}>Product source</Label>
         <Select value={source} onValueChange={(v) => setSource(v as ProductSource)}>
           <SelectTrigger>

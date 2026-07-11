@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { supabase } from "@/integrations/supabase/client";
 
 export type ProductSource = "manual" | "shopify";
+export type SiteMode = "coming_soon" | "live";
 
 // Fallbacks used only if the store_settings row can't be read (e.g. migration not
 // applied yet). These mirror the values the storefront originally hard-coded.
@@ -14,6 +15,7 @@ export interface StoreSettings {
   shopifyDomain: string;
   shopifyStorefrontToken: string;
   shopifyApiVersion: string;
+  siteMode: SiteMode;
 }
 
 interface SettingsState extends StoreSettings {
@@ -28,6 +30,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   shopifyDomain: DEFAULT_SHOPIFY_DOMAIN,
   shopifyStorefrontToken: DEFAULT_SHOPIFY_TOKEN,
   shopifyApiVersion: DEFAULT_SHOPIFY_API_VERSION,
+  // Gated by default until settings load, so a slow/failed load never
+  // accidentally exposes the storefront before the owner is ready.
+  siteMode: "coming_soon",
   loaded: false,
   loading: false,
 
@@ -47,6 +52,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           shopifyDomain: data.shopify_domain || DEFAULT_SHOPIFY_DOMAIN,
           shopifyStorefrontToken: data.shopify_storefront_token || DEFAULT_SHOPIFY_TOKEN,
           shopifyApiVersion: data.shopify_api_version || DEFAULT_SHOPIFY_API_VERSION,
+          siteMode: (data.site_mode as SiteMode) ?? "coming_soon",
         });
       }
     } catch (err) {
@@ -66,6 +72,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         shopify_domain: next.shopifyDomain || null,
         shopify_storefront_token: next.shopifyStorefrontToken || null,
         shopify_api_version: next.shopifyApiVersion,
+        site_mode: next.siteMode,
       });
 
     if (error) return { error: error.message };
@@ -75,6 +82,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       shopifyDomain: next.shopifyDomain,
       shopifyStorefrontToken: next.shopifyStorefrontToken,
       shopifyApiVersion: next.shopifyApiVersion,
+      siteMode: next.siteMode,
     });
     return { error: null };
   },
@@ -92,5 +100,6 @@ export async function ensureSettings(): Promise<StoreSettings> {
     shopifyDomain: s.shopifyDomain,
     shopifyStorefrontToken: s.shopifyStorefrontToken,
     shopifyApiVersion: s.shopifyApiVersion,
+    siteMode: s.siteMode,
   };
 }

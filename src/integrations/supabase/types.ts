@@ -99,6 +99,7 @@ export type Database = {
           shopify_domain: string | null
           shopify_storefront_token: string | null
           shopify_api_version: string
+          site_mode: string
           updated_at: string
         }
         Insert: {
@@ -107,6 +108,7 @@ export type Database = {
           shopify_domain?: string | null
           shopify_storefront_token?: string | null
           shopify_api_version?: string
+          site_mode?: string
           updated_at?: string
         }
         Update: {
@@ -115,7 +117,26 @@ export type Database = {
           shopify_domain?: string | null
           shopify_storefront_token?: string | null
           shopify_api_version?: string
+          site_mode?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      phone_signups: {
+        Row: {
+          id: string
+          phone: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          phone: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          phone?: string
+          created_at?: string
         }
         Relationships: []
       }

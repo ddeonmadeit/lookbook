@@ -31,8 +31,9 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Project Pages are served from https://<user>.github.io/lookbook/
-          VITE_BASE: /lookbook/
+          # Custom domain (knotsss.com) serves the Pages site at the domain
+          # root, so assets must be built with a root base path.
+          VITE_BASE: /
 
       - name: SPA fallback (deep links + refresh)
         run: cp dist/index.html dist/404.html
