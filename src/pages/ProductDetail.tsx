@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { type ShopifyProduct } from "@/lib/shopify";
 import { getProducts } from "@/lib/products";
 import { useCartStore } from "@/stores/cartStore";
@@ -569,7 +570,7 @@ const ProductDetail = () => {
                       {product.descriptionHtml ? (
                         <div
                           className="font-body text-[11px] text-muted-foreground leading-relaxed prose-sm [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-4 [&_strong]:text-foreground"
-                          dangerouslySetInnerHTML={{ __html: product.descriptionHtml }}
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.descriptionHtml) }}
                         />
                       ) : (
                         <p className="font-body text-[11px] text-muted-foreground leading-relaxed">

@@ -1,0 +1,28 @@
+name: Supabase keep-alive
+
+# Supabase's free tier pauses projects after ~1 week without API activity,
+# which takes the whole site down (no products, no login, no signups). This
+# pings the public REST API twice a week so the project never goes idle.
+
+on:
+  schedule:
+    - cron: "23 7 * * 1,4" # Mon + Thu 07:23 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ping Supabase REST API
+        run: |
+          # The anon key is a public client credential (also shipped in the
+          # frontend bundle); reading it from .env keeps rotation in one place.
+          ANON=$(grep -oP 'VITE_SUPABASE_PUBLISHABLE_KEY="\K[^"]+' .env)
+          URL=$(grep -oP 'VITE_SUPABASE_URL="\K[^"]+' .env)
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "$URL/rest/v1/store_settings?select=id&limit=1" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON")
+          echo "Supabase responded with HTTP $STATUS"
+          test "$STATUS" = "200"

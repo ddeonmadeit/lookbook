@@ -11,6 +11,18 @@ const BASE = process.env.VITE_BASE || "/";
 
 export default defineConfig(({ mode }) => ({
   base: BASE,
+  build: {
+    rollupOptions: {
+      output: {
+        // Big, rarely-changing libraries get their own long-cached chunks so
+        // app updates don't force shoppers to re-download them.
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-supabase": ["@supabase/supabase-js"],
+        },
+      },
+    },
+  },
   server: {
     host: "::",
     port: 8080,

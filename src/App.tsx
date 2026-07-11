@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,15 +7,28 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
 import { useSettingsStore } from "@/stores/settingsStore";
 import Index from "./pages/Index";
-import ProductDetail from "./pages/ProductDetail";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Checkout from "./pages/Checkout";
 import ComingSoon from "./pages/ComingSoon";
-import AdminLogin from "./pages/admin/AdminLogin";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import RequireAdmin from "./pages/admin/RequireAdmin";
-import NotFound from "./pages/NotFound";
+import loadingSpinner from "@/assets/loading-spinner.gif";
+
+// Route-level code splitting: shoppers landing on / (or the coming-soon gate)
+// only download what those views need; heavier pages (product detail, admin
+// dashboard, checkout) load on demand.
+const ProductDetail = lazy(() => import("./pages/ProductDetail"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const RequireAdmin = lazy(() => import("./pages/admin/RequireAdmin"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Matches the loading state the pages themselves show, so a route chunk
+// loading looks no different from a page loading its data.
+const RouteFallback = () => (
+  <div className="h-full bg-background flex items-center justify-center">
+    <img src={loadingSpinner} alt="Loading" className="w-16 h-16 object-contain" />
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -32,23 +45,25 @@ const SiteGate = () => {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Index />} />
-      <Route path="/about" element={<About />} />
-      <Route path="/contact" element={<Contact />} />
-      <Route path="/product/:handle" element={<ProductDetail />} />
-      <Route path="/checkout" element={<Checkout />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route
-        path="/admin"
-        element={
-          <RequireAdmin>
-            <AdminDashboard />
-          </RequireAdmin>
-        }
-      />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/product/:handle" element={<ProductDetail />} />
+        <Route path="/checkout" element={<Checkout />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route
+          path="/admin"
+          element={
+            <RequireAdmin>
+              <AdminDashboard />
+            </RequireAdmin>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   );
 };
 
