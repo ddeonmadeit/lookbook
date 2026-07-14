@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { useAdminSession } from "@/hooks/useAdminSession";
 import loadingSpinner from "@/assets/loading-spinner.gif";
 
 /**
@@ -10,21 +8,9 @@ import loadingSpinner from "@/assets/loading-spinner.gif";
  * Users) and keep public sign-ups disabled so nobody else can get in.
  */
 const RequireAdmin = ({ children }: { children: React.ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { hasSession, checked } = useAdminSession();
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  if (loading) {
+  if (!checked) {
     return (
       <div className="h-full bg-background flex items-center justify-center">
         <img src={loadingSpinner} alt="Loading" className="w-12 h-12 object-contain" />
@@ -32,7 +18,7 @@ const RequireAdmin = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (!session) {
+  if (!hasSession) {
     return <Navigate to="/admin/login" replace />;
   }
 

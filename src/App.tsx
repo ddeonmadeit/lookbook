@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
 import { usePageTracking } from "@/hooks/usePageTracking";
+import { useAdminSession } from "@/hooks/useAdminSession";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAdminThemeStore } from "@/stores/adminThemeStore";
 import Index from "./pages/Index";
@@ -37,13 +38,20 @@ const queryClient = new QueryClient();
 
 // While site_mode is "coming_soon", every route except /admin (so the owner
 // can still log in, manage products, and flip the switch) shows the
-// countdown/early-access page instead of the real storefront.
+// countdown/early-access page instead of the real storefront. A logged-in
+// admin session also bypasses the gate on public routes — lets the owner
+// preview the live site from their own browser without exposing it to
+// anyone else, who still needs a valid login to see past the gate.
 const SiteGate = () => {
   usePageTracking();
   const siteMode = useSettingsStore((s) => s.siteMode);
   const adminTheme = useAdminThemeStore((s) => s.theme);
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
+  // Only worth checking while actually gated — once live, this never gates
+  // anything, so skip the auth lookup entirely for ordinary shoppers.
+  const isGated = siteMode === "coming_soon" && !isAdminRoute;
+  const { hasSession, checked } = useAdminSession();
 
   // Dark mode is an admin-only preference. Applied here — a single stable
   // component that's never itself lazy-loaded/unmounted — rather than inside
@@ -53,7 +61,7 @@ const SiteGate = () => {
     document.documentElement.classList.toggle("dark", isAdminRoute && adminTheme === "dark");
   }, [isAdminRoute, adminTheme]);
 
-  if (siteMode === "coming_soon" && !isAdminRoute) {
+  if (isGated && !(checked && hasSession)) {
     return <ComingSoon />;
   }
 

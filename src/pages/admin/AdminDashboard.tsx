@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, LogOut, Download, Sun, Moon } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, LogOut, Download, Sun, Moon, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
@@ -67,9 +67,15 @@ const AdminDashboard = () => {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <h1 className="font-display text-sm uppercase tracking-[0.2em]">Store Dashboard</h1>
-        <div className="flex items-center gap-2">
+      <header className="border-b border-border px-3 sm:px-6 py-4 flex items-center justify-between gap-2">
+        <h1 className="font-display text-sm uppercase tracking-[0.2em] flex-shrink-0">Store Dashboard</h1>
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" asChild className="text-[11px] uppercase tracking-[0.1em] px-2 sm:px-3">
+            <a href={import.meta.env.BASE_URL} target="_blank" rel="noopener noreferrer" aria-label="Preview live site">
+              <ExternalLink className="w-3.5 h-3.5 sm:mr-2" />
+              <span className="hidden sm:inline">Preview live site</span>
+            </a>
+          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -78,8 +84,9 @@ const AdminDashboard = () => {
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em]">
-            <LogOut className="w-3.5 h-3.5 mr-2" /> Sign out
+          <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em] px-2 sm:px-3" aria-label="Sign out">
+            <LogOut className="w-3.5 h-3.5 sm:mr-2" />
+            <span className="hidden sm:inline">Sign out</span>
           </Button>
         </div>
       </header>
