@@ -267,11 +267,20 @@ const ProductsTab = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("products")
       .select("*")
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
+    // The "position" column only exists once its migration has been run;
+    // fall back to the old ordering rather than showing an empty list.
+    if (error) {
+      ({ data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }));
+    }
     if (error) toast.error("Failed to load products", { description: error.message });
     setProducts((data as unknown as ProductRow[]) || []);
     setLoading(false);

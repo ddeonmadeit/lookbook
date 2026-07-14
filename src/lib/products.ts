@@ -129,11 +129,22 @@ function manualRowToProduct(row: ProductRow): ShopifyProduct {
 }
 
 async function getManualStorefront(): Promise<StorefrontData> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("products")
     .select("*")
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
+
+  // Falls back to the pre-"position" ordering if that migration hasn't been
+  // applied to this database yet, so the storefront never goes blank because
+  // of a schema/code version mismatch.
+  if (error) {
+    ({ data, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }));
+  }
 
   if (error) {
     console.error("Failed to load manual products:", error);

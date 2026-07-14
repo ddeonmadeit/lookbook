@@ -196,7 +196,16 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
       const query = product
         ? supabase.from("products").update(payload).eq("id", product.id)
         : supabase.from("products").insert(payload);
-      const { error } = await query;
+      let { error } = await query;
+      // The "position" column only exists once its migration has been run;
+      // retry without it rather than blocking product creation entirely.
+      if (error && "position" in payload) {
+        const { position: _position, ...withoutPosition } = payload;
+        const retryQuery = product
+          ? supabase.from("products").update(withoutPosition).eq("id", product.id)
+          : supabase.from("products").insert(withoutPosition);
+        ({ error } = await retryQuery);
+      }
       if (error) {
         toast.error("Could not save product", { description: error.message });
         return;
