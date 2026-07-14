@@ -63,7 +63,7 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full overflow-y-auto bg-background">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <h1 className="font-display text-sm uppercase tracking-[0.2em]">Store Dashboard</h1>
         <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em]">
