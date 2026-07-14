@@ -26,13 +26,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, LogOut, Download } from "lucide-react";
+import { Loader2, Pencil, Trash2, Plus, LogOut, Download, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
 import OverviewTab from "./OverviewTab";
+import { useAdminThemeStore } from "@/stores/adminThemeStore";
 
 interface OrderRow {
   id: string;
@@ -56,6 +57,8 @@ interface PhoneSignupRow {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const theme = useAdminThemeStore((s) => s.theme);
+  const toggleTheme = useAdminThemeStore((s) => s.toggle);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -66,9 +69,19 @@ const AdminDashboard = () => {
     <div className="h-full overflow-y-auto bg-background">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <h1 className="font-display text-sm uppercase tracking-[0.2em]">Store Dashboard</h1>
-        <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em]">
-          <LogOut className="w-3.5 h-3.5 mr-2" /> Sign out
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em]">
+            <LogOut className="w-3.5 h-3.5 mr-2" /> Sign out
+          </Button>
+        </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

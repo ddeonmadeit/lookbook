@@ -13,19 +13,31 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAdminThemeStore } from "@/stores/adminThemeStore";
 
 /*
- * Chart ink — resolved from the site theme's tokens so charts match the rest
- * of the admin. Contrast verified against the theme surface (hsl(27 100% 97%)):
- * ink 12.9:1, muted axis 5.1:1, delta-up 7.1:1, delta-down 4.5:1 — all clear
- * of the 3:1 mark minimum. Single-series charts: identity comes from the card
- * title, so no legend and one hue per chart.
+ * Chart ink — resolved from the theme's tokens so charts match the rest of
+ * the admin, in both light and dark mode. Contrast verified with the
+ * dataviz skill's validator:
+ *   light (surface hsl(27 100% 97%)): ink 12.9:1, axis 5.1:1, delta-up 7.1:1, delta-down 4.5:1
+ *   dark  (surface hsl(24 35% 9%)):   ink 15.1:1, axis 7.5:1, delta-up 5.3:1, delta-down 8.2:1
+ * all clear of the 3:1 mark minimum. Single-series charts: identity comes
+ * from the card title, so no legend and one hue per chart.
  */
-const INK = "#332c28"; // --foreground
-const AXIS = "#746863"; // --muted-foreground
-const GRID = "#e7e0da"; // --border
-const DELTA_UP = "#006300";
-const DELTA_DOWN = "#d03b3b";
+const LIGHT_CHART_COLORS = {
+  ink: "#332c28", // --foreground
+  axis: "#746863", // --muted-foreground
+  grid: "#e7e0da", // --border
+  deltaUp: "#006300",
+  deltaDown: "#d03b3b",
+};
+const DARK_CHART_COLORS = {
+  ink: "#efebe7", // --foreground
+  axis: "#b0a69b", // --muted-foreground
+  grid: "#3d3129", // --border
+  deltaUp: "#0ca30c",
+  deltaDown: "#ff8f8f",
+};
 
 type RangeDays = 7 | 30;
 
@@ -97,10 +109,12 @@ const StatTile = ({
   label,
   value,
   delta,
+  colors,
 }: {
   label: string;
   value: string;
   delta: number | null;
+  colors: typeof LIGHT_CHART_COLORS;
 }) => (
   <div className="border border-border rounded-md p-4">
     <p className="font-body text-[10px] uppercase tracking-[0.15em] text-muted-foreground">{label}</p>
@@ -108,7 +122,7 @@ const StatTile = ({
     {delta !== null && (
       <p
         className="font-body text-[11px] mt-0.5"
-        style={{ color: delta >= 0 ? DELTA_UP : DELTA_DOWN }}
+        style={{ color: delta >= 0 ? colors.deltaUp : colors.deltaDown }}
       >
         {delta >= 0 ? "↑" : "↓"} {Math.abs(delta).toFixed(0)}% vs previous {""}
         <span className="text-muted-foreground">period</span>
@@ -118,6 +132,8 @@ const StatTile = ({
 );
 
 const OverviewTab = () => {
+  const theme = useAdminThemeStore((s) => s.theme);
+  const colors = theme === "dark" ? DARK_CHART_COLORS : LIGHT_CHART_COLORS;
   const [range, setRange] = useState<RangeDays>(7);
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<OrderLite[]>([]);
@@ -232,10 +248,10 @@ const OverviewTab = () => {
   }
 
   const axisProps = {
-    stroke: AXIS,
+    stroke: colors.axis,
     fontSize: 10,
     tickLine: false,
-    axisLine: { stroke: GRID },
+    axisLine: { stroke: colors.grid },
     fontFamily: "var(--font-body)",
   } as const;
 
@@ -262,10 +278,10 @@ const OverviewTab = () => {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatTile label="Sales" value={`$${compact(Math.round(stats.sales))}`} delta={stats.salesDelta} />
-        <StatTile label="Orders" value={compact(stats.orders)} delta={stats.ordersDelta} />
-        <StatTile label="Visitors" value={compact(stats.visitors)} delta={stats.visitorsDelta} />
-        <StatTile label="Conversion" value={`${stats.conversion.toFixed(1)}%`} delta={stats.conversionDelta} />
+        <StatTile label="Sales" value={`$${compact(Math.round(stats.sales))}`} delta={stats.salesDelta} colors={colors} />
+        <StatTile label="Orders" value={compact(stats.orders)} delta={stats.ordersDelta} colors={colors} />
+        <StatTile label="Visitors" value={compact(stats.visitors)} delta={stats.visitorsDelta} colors={colors} />
+        <StatTile label="Conversion" value={`${stats.conversion.toFixed(1)}%`} delta={stats.conversionDelta} colors={colors} />
       </div>
 
       {/* Time charts */}
@@ -277,20 +293,20 @@ const OverviewTab = () => {
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
-                <CartesianGrid stroke={GRID} strokeWidth={1} vertical={false} />
+                <CartesianGrid stroke={colors.grid} strokeWidth={1} vertical={false} />
                 <XAxis dataKey="day" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis {...axisProps} tickFormatter={(v: number) => `$${compact(v)}`} width={58} />
-                <Tooltip content={<ChartTip money />} cursor={{ stroke: AXIS, strokeWidth: 1 }} />
+                <Tooltip content={<ChartTip money />} cursor={{ stroke: colors.axis, strokeWidth: 1 }} />
                 <Area
                   type="monotone"
                   dataKey="sales"
-                  stroke={INK}
+                  stroke={colors.ink}
                   strokeWidth={2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  fill={INK}
+                  fill={colors.ink}
                   fillOpacity={0.1}
-                  activeDot={{ r: 4, fill: INK, stroke: "hsl(var(--background))", strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: colors.ink, stroke: "hsl(var(--background))", strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -304,20 +320,20 @@ const OverviewTab = () => {
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
-                <CartesianGrid stroke={GRID} strokeWidth={1} vertical={false} />
+                <CartesianGrid stroke={colors.grid} strokeWidth={1} vertical={false} />
                 <XAxis dataKey="day" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis {...axisProps} tickFormatter={(v: number) => compact(v)} width={58} allowDecimals={false} />
-                <Tooltip content={<ChartTip />} cursor={{ stroke: AXIS, strokeWidth: 1 }} />
+                <Tooltip content={<ChartTip />} cursor={{ stroke: colors.axis, strokeWidth: 1 }} />
                 <Area
                   type="monotone"
                   dataKey="visitors"
-                  stroke={INK}
+                  stroke={colors.ink}
                   strokeWidth={2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  fill={INK}
+                  fill={colors.ink}
                   fillOpacity={0.1}
-                  activeDot={{ r: 4, fill: INK, stroke: "hsl(var(--background))", strokeWidth: 2 }}
+                  activeDot={{ r: 4, fill: colors.ink, stroke: "hsl(var(--background))", strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -351,15 +367,15 @@ const OverviewTab = () => {
                     {...axisProps}
                     axisLine={false}
                     width={110}
-                    tick={{ fill: INK, fontSize: 10 }}
+                    tick={{ fill: colors.ink, fontSize: 10 }}
                   />
-                  <Tooltip content={<ChartTip />} cursor={{ fill: GRID, fillOpacity: 0.4 }} />
+                  <Tooltip content={<ChartTip />} cursor={{ fill: colors.grid, fillOpacity: 0.4 }} />
                   <Bar
                     dataKey="units"
-                    fill={INK}
+                    fill={colors.ink}
                     maxBarSize={18}
                     radius={[0, 4, 4, 0]}
-                    label={{ position: "right", fill: AXIS, fontSize: 10 }}
+                    label={{ position: "right", fill: colors.axis, fontSize: 10 }}
                   />
                 </BarChart>
               </ResponsiveContainer>

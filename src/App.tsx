@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
 import { usePageTracking } from "@/hooks/usePageTracking";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAdminThemeStore } from "@/stores/adminThemeStore";
 import Index from "./pages/Index";
 import ComingSoon from "./pages/ComingSoon";
 import loadingSpinner from "@/assets/loading-spinner.gif";
@@ -40,8 +41,17 @@ const queryClient = new QueryClient();
 const SiteGate = () => {
   usePageTracking();
   const siteMode = useSettingsStore((s) => s.siteMode);
+  const adminTheme = useAdminThemeStore((s) => s.theme);
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
+
+  // Dark mode is an admin-only preference. Applied here — a single stable
+  // component that's never itself lazy-loaded/unmounted — rather than inside
+  // the lazy-loaded admin pages, so it can't be left in a stale state by a
+  // Suspense/lazy remount race. The public storefront never gets the class.
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isAdminRoute && adminTheme === "dark");
+  }, [isAdminRoute, adminTheme]);
 
   if (siteMode === "coming_soon" && !isAdminRoute) {
     return <ComingSoon />;
