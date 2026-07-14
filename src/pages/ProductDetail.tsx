@@ -5,8 +5,9 @@ import { type ShopifyProduct } from "@/lib/shopify";
 import { getProducts } from "@/lib/products";
 import { useCartStore } from "@/stores/cartStore";
 import { Navbar } from "@/components/Navbar";
-import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
+import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle, ZoomIn } from "lucide-react";
 import loadingSpinner from "@/assets/loading-spinner.gif";
+import ProductImageZoom from "@/components/ProductImageZoom";
 
 const MYSTERY_HANDLE = "untitled-oct1_21-14";
 
@@ -42,6 +43,7 @@ const ProductDetail = () => {
   const [showMystery, setShowMystery] = useState(false);
   const [openAccordion, setOpenAccordion] = useState<string | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -212,6 +214,7 @@ const ProductDetail = () => {
   // Wheel handler: scroll down = next, scroll up = prev (when no panels open)
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
+      if (zoomOpen) return; // the zoom overlay handles its own wheel-to-zoom
       if (isTransitioning) {
         e.preventDefault();
         return;
@@ -244,11 +247,12 @@ const ProductDetail = () => {
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
-  }, [currentProductIndex, goToImage, goToProduct, isTransitioning, panelsOpen]);
+  }, [currentProductIndex, goToImage, goToProduct, isTransitioning, panelsOpen, zoomOpen]);
 
   // Keyboard navigation
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (zoomOpen) return; // the zoom overlay owns arrow/Escape keys while open
       if (e.key === "ArrowLeft") goToImage(-1);
       if (e.key === "ArrowRight") goToImage(1);
       if (e.key === "ArrowUp") { e.preventDefault(); goToProduct(currentProductIndex - 1); }
@@ -262,7 +266,7 @@ const ProductDetail = () => {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentProductIndex, goToImage, goToProduct, navigate, showSizes, showDetails, showMystery]);
+  }, [currentProductIndex, goToImage, goToProduct, navigate, showSizes, showDetails, showMystery, zoomOpen]);
 
   const getVariantForOptions = (options: Record<string, string>) => {
     if (!product) return null;
@@ -385,7 +389,10 @@ const ProductDetail = () => {
                 key={`${product.handle}-${currentImageIndex}`}
                 src={image.url}
                 alt={image.altText || product.title}
-                className={`max-w-[90%] object-contain transition-[max-height] duration-300 ease-out ${panelsOpen ? 'max-h-[38vh]' : 'max-h-[65vh]'}`}
+                className={`max-w-[90%] object-contain transition-[max-height] duration-300 ease-out cursor-zoom-in ${panelsOpen ? 'max-h-[38vh]' : 'max-h-[65vh]'}`}
+                onClick={() => {
+                  if (!isTransitioning && slidePhase === "idle") setZoomOpen(true);
+                }}
                 style={{
                   transition: slidePhase === 'idle' ? 'opacity 0.3s ease-out, max-height 0.3s ease-out' : 
                     slidePhase === 'out' ? 'transform 0.28s cubic-bezier(0.4, 0, 1, 1), opacity 0.28s ease-out' :
@@ -414,6 +421,20 @@ const ProductDetail = () => {
                   }
                 }}
               />
+            )}
+            {image && slidePhase === "idle" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomOpen(true);
+                }}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => e.stopPropagation()}
+                className="absolute bottom-1 right-1 w-8 h-8 flex items-center justify-center rounded-full bg-background/70 text-foreground border border-border backdrop-blur-sm"
+                aria-label="Zoom in on product photo"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
             )}
           </div>
           {images.length > 1 && (
@@ -650,6 +671,15 @@ const ProductDetail = () => {
             />
           ))}
         </div>
+      )}
+
+      {zoomOpen && images.length > 0 && (
+        <ProductImageZoom
+          images={images.map((edge) => edge.node)}
+          initialIndex={currentImageIndex}
+          productTitle={product.title}
+          onClose={() => setZoomOpen(false)}
+        />
       )}
     </div>
   );
