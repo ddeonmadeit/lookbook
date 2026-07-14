@@ -55,6 +55,7 @@ export type Database = {
           variants: Json
           available: boolean
           sort_order: number
+          position: number
           created_at: string
           updated_at: string
         }
@@ -71,6 +72,7 @@ export type Database = {
           variants?: Json
           available?: boolean
           sort_order?: number
+          position?: number
           created_at?: string
           updated_at?: string
         }
@@ -87,6 +89,7 @@ export type Database = {
           variants?: Json
           available?: boolean
           sort_order?: number
+          position?: number
           created_at?: string
           updated_at?: string
         }
@@ -101,6 +104,8 @@ export type Database = {
           shopify_api_version: string
           site_mode: string
           payments_enabled: boolean
+          shipping_flat_rate: number
+          free_shipping_threshold: number | null
           updated_at: string
         }
         Insert: {
@@ -111,6 +116,8 @@ export type Database = {
           shopify_api_version?: string
           site_mode?: string
           payments_enabled?: boolean
+          shipping_flat_rate?: number
+          free_shipping_threshold?: number | null
           updated_at?: string
         }
         Update: {
@@ -121,6 +128,8 @@ export type Database = {
           shopify_api_version?: string
           site_mode?: string
           payments_enabled?: boolean
+          shipping_flat_rate?: number
+          free_shipping_threshold?: number | null
           updated_at?: string
         }
         Relationships: []

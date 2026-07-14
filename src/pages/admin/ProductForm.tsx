@@ -71,11 +71,13 @@ function buildVariants(
 
 interface ProductFormProps {
   product: ProductRow | null;
+  /** Position to give a brand-new product (appended to the end of the grid). */
+  nextPosition: number;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
+const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormProps) => {
   const [title, setTitle] = useState(product?.title ?? "");
   const [handle, setHandle] = useState(product?.handle ?? "");
   const [handleEdited, setHandleEdited] = useState(!!product);
@@ -186,6 +188,7 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
       variants: variants as unknown as Json,
       available,
       sort_order: parseInt(sortOrder, 10) || 0,
+      ...(product ? {} : { position: nextPosition }),
     };
 
     setSaving(true);
@@ -234,11 +237,11 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
           <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label className={inputLabel}>Sort order / display number</Label>
+          <Label className={inputLabel}>Display number</Label>
           <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
           <p className="font-body text-[10px] text-muted-foreground">
-            Controls grid position and is shown on the storefront as the zero-padded
-            product number (e.g. 25 → "025").
+            Shown on the storefront as the zero-padded product number (e.g. 25 →
+            "025"). Grid position is set separately from the products list.
           </p>
         </div>
         <div className="flex items-center gap-3 pt-6">

@@ -65,6 +65,14 @@ Deno.serve(async (req) => {
       .in("id", ids);
     if (error) throw error;
 
+    const { data: settings } = await supabase
+      .from("store_settings")
+      .select("shipping_flat_rate,free_shipping_threshold")
+      .eq("id", 1)
+      .maybeSingle();
+    const flatRate = Number(settings?.shipping_flat_rate ?? 0);
+    const freeThreshold = settings?.free_shipping_threshold;
+
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
     const orderItems: Record<string, unknown>[] = [];
     let subtotal = 0;
@@ -132,6 +140,13 @@ Deno.serve(async (req) => {
       .single();
     if (orderErr) throw orderErr;
 
+    // Free shipping once the subtotal clears the threshold; otherwise the flat rate.
+    const shippingCost =
+      freeThreshold !== null && freeThreshold !== undefined && subtotal >= Number(freeThreshold)
+        ? 0
+        : flatRate;
+    const shippingLabel = shippingCost === 0 ? "Free shipping" : "Shipping";
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
@@ -145,6 +160,15 @@ Deno.serve(async (req) => {
           "HK", "AE", "MX", "BR",
         ],
       },
+      shipping_options: [
+        {
+          shipping_rate_data: {
+            type: "fixed_amount",
+            fixed_amount: { amount: Math.round(shippingCost * 100), currency },
+            display_name: shippingLabel,
+          },
+        },
+      ],
       phone_number_collection: { enabled: true },
     });
 

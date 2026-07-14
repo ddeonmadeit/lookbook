@@ -40,6 +40,7 @@ export interface ProductRow {
   variants: ManualVariant[];
   available: boolean;
   sort_order: number;
+  position: number;
   created_at: string;
 }
 
@@ -131,7 +132,7 @@ async function getManualStorefront(): Promise<StorefrontData> {
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .order("sort_order", { ascending: true })
+    .order("position", { ascending: true })
     .order("created_at", { ascending: true });
 
   if (error) {

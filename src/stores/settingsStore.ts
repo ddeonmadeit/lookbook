@@ -17,6 +17,10 @@ export interface StoreSettings {
   shopifyApiVersion: string;
   siteMode: SiteMode;
   paymentsEnabled: boolean;
+  /** Flat shipping fee added at checkout, in the storefront's currency. */
+  shippingFlatRate: number;
+  /** Subtotal at/above which shipping is free. Null = never auto-free. */
+  freeShippingThreshold: number | null;
 }
 
 interface SettingsState extends StoreSettings {
@@ -35,6 +39,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // accidentally exposes the storefront before the owner is ready.
   siteMode: "coming_soon",
   paymentsEnabled: false,
+  shippingFlatRate: 0,
+  freeShippingThreshold: null,
   loaded: false,
   loading: false,
 
@@ -56,6 +62,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           shopifyApiVersion: data.shopify_api_version || DEFAULT_SHOPIFY_API_VERSION,
           siteMode: (data.site_mode as SiteMode) ?? "coming_soon",
           paymentsEnabled: data.payments_enabled ?? false,
+          shippingFlatRate: Number(data.shipping_flat_rate ?? 0),
+          freeShippingThreshold:
+            data.free_shipping_threshold === null || data.free_shipping_threshold === undefined
+              ? null
+              : Number(data.free_shipping_threshold),
         });
       }
     } catch (err) {
@@ -77,6 +88,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         shopify_api_version: next.shopifyApiVersion,
         site_mode: next.siteMode,
         payments_enabled: next.paymentsEnabled,
+        shipping_flat_rate: next.shippingFlatRate,
+        free_shipping_threshold: next.freeShippingThreshold,
       });
 
     if (error) return { error: error.message };
@@ -88,6 +101,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       shopifyApiVersion: next.shopifyApiVersion,
       siteMode: next.siteMode,
       paymentsEnabled: next.paymentsEnabled,
+      shippingFlatRate: next.shippingFlatRate,
+      freeShippingThreshold: next.freeShippingThreshold,
     });
     return { error: null };
   },
@@ -107,5 +122,7 @@ export async function ensureSettings(): Promise<StoreSettings> {
     shopifyApiVersion: s.shopifyApiVersion,
     siteMode: s.siteMode,
     paymentsEnabled: s.paymentsEnabled,
+    shippingFlatRate: s.shippingFlatRate,
+    freeShippingThreshold: s.freeShippingThreshold,
   };
 }

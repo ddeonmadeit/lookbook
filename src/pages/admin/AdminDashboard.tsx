@@ -25,9 +25,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Pencil, Trash2, Plus, LogOut, Download, Sun, Moon, ExternalLink } from "lucide-react";
+import {
+  Loader2,
+  Pencil,
+  Trash2,
+  Plus,
+  LogOut,
+  Download,
+  Sun,
+  Moon,
+  ExternalLink,
+  GripVertical,
+  ArrowUpDown,
+} from "lucide-react";
 import { toast } from "sonner";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { supabase } from "@/integrations/supabase/client";
 import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
 import type { ProductRow } from "@/lib/products";
@@ -127,18 +160,117 @@ const AdminDashboard = () => {
 /* -------------------------------------------------------------------------- */
 /* Products                                                                    */
 /* -------------------------------------------------------------------------- */
+type SortPreset = "price-desc" | "price-asc" | "name-asc" | "name-desc" | "newest" | "oldest";
+
+const SORT_PRESETS: Array<{ value: SortPreset; label: string }> = [
+  { value: "price-desc", label: "Price: high to low" },
+  { value: "price-asc", label: "Price: low to high" },
+  { value: "name-asc", label: "Name: A to Z" },
+  { value: "name-desc", label: "Name: Z to A" },
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+];
+
+function sortByPreset(rows: ProductRow[], preset: SortPreset): ProductRow[] {
+  const sorted = [...rows];
+  switch (preset) {
+    case "price-desc":
+      return sorted.sort((a, b) => Number(b.price) - Number(a.price));
+    case "price-asc":
+      return sorted.sort((a, b) => Number(a.price) - Number(b.price));
+    case "name-asc":
+      return sorted.sort((a, b) => a.title.localeCompare(b.title));
+    case "name-desc":
+      return sorted.sort((a, b) => b.title.localeCompare(a.title));
+    case "newest":
+      return sorted.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    case "oldest":
+      return sorted.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+    default:
+      return sorted;
+  }
+}
+
+/** Draggable row: only the grip handle initiates dragging, so buttons/text stay clickable. */
+const SortableProductRow = ({
+  product,
+  onEdit,
+  onDelete,
+}: {
+  product: ProductRow;
+  onEdit: (p: ProductRow) => void;
+  onDelete: (p: ProductRow) => void;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: product.id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-8">
+        <button
+          type="button"
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+      </TableCell>
+      <TableCell>
+        <div className="w-10 h-10 flex items-center justify-center">
+          {product.images?.[0]?.url && (
+            <img src={product.images[0].url} alt={product.title} className="max-w-full max-h-full object-contain" />
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="font-body text-[12px]">{product.title}</div>
+        <div className="font-body text-[10px] text-muted-foreground">{product.handle}</div>
+      </TableCell>
+      <TableCell className="font-body text-[12px]">
+        {product.currency} {Number(product.price).toFixed(0)}
+      </TableCell>
+      <TableCell>
+        {product.available ? (
+          <Badge variant="secondary" className="text-[10px]">In stock</Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px]">Sold out</Badge>
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1 justify-end">
+          <Button variant="ghost" size="icon" onClick={() => onEdit(product)}>
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => onDelete(product)}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+};
+
 const ProductsTab = () => {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductRow | null>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .order("sort_order", { ascending: true })
+      .order("position", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) toast.error("Failed to load products", { description: error.message });
     setProducts((data as unknown as ProductRow[]) || []);
@@ -174,15 +306,59 @@ const ProductsTab = () => {
     load();
   };
 
+  /** Persist the current on-screen order as each row's new `position`. Never
+   * touches `sort_order` — that stays the fixed, owner-assigned display number. */
+  const persistOrder = async (ordered: ProductRow[]) => {
+    setProducts(ordered);
+    const results = await Promise.all(
+      ordered.map((p, i) => supabase.from("products").update({ position: i + 1 }).eq("id", p.id)),
+    );
+    const firstError = results.find((r) => r.error)?.error;
+    if (firstError) toast.error("Could not save new order", { description: firstError.message });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = products.findIndex((p) => p.id === active.id);
+    const newIndex = products.findIndex((p) => p.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    persistOrder(arrayMove(products, oldIndex, newIndex));
+  };
+
+  const applyPreset = (preset: SortPreset) => {
+    persistOrder(sortByPreset(products, preset));
+  };
+
+  const nextPosition = products.length
+    ? Math.max(...products.map((p) => p.position ?? 0)) + 1
+    : 1;
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 gap-2">
         <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
           {products.length} product{products.length !== 1 ? "s" : ""}
         </p>
-        <Button size="sm" onClick={openAdd}>
-          <Plus className="w-4 h-4 mr-1" /> Add product
-        </Button>
+        <div className="flex gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="text-[11px]" disabled={products.length < 2}>
+                <ArrowUpDown className="w-3.5 h-3.5 mr-1.5" /> Sort by
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {SORT_PRESETS.map((preset) => (
+                <DropdownMenuItem key={preset.value} onClick={() => applyPreset(preset.value)}>
+                  {preset.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button size="sm" onClick={openAdd}>
+            <Plus className="w-4 h-4 mr-1" /> Add product
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -198,6 +374,7 @@ const ProductsTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8"></TableHead>
                 <TableHead className="w-16"></TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Price</TableHead>
@@ -205,46 +382,21 @@ const ProductsTab = () => {
                 <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {products.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>
-                    <div className="w-10 h-10 flex items-center justify-center">
-                      {p.images?.[0]?.url && (
-                        <img src={p.images[0].url} alt={p.title} className="max-w-full max-h-full object-contain" />
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-body text-[12px]">{p.title}</div>
-                    <div className="font-body text-[10px] text-muted-foreground">{p.handle}</div>
-                  </TableCell>
-                  <TableCell className="font-body text-[12px]">
-                    {p.currency} {Number(p.price).toFixed(0)}
-                  </TableCell>
-                  <TableCell>
-                    {p.available ? (
-                      <Badge variant="secondary" className="text-[10px]">In stock</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px]">Sold out</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 justify-end">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={products.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+                <TableBody>
+                  {products.map((p) => (
+                    <SortableProductRow key={p.id} product={p} onEdit={openEdit} onDelete={handleDelete} />
+                  ))}
+                </TableBody>
+              </SortableContext>
+            </DndContext>
           </Table>
         </div>
       )}
+      <p className="font-body text-[10px] text-muted-foreground mt-2">
+        Drag the handle to reorder the storefront grid, or use "Sort by" for a one-click layout.
+      </p>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -253,7 +405,7 @@ const ProductsTab = () => {
               {editing ? "Edit product" : "Add product"}
             </DialogTitle>
           </DialogHeader>
-          <ProductForm product={editing} onSaved={onSaved} onCancel={() => setDialogOpen(false)} />
+          <ProductForm product={editing} nextPosition={nextPosition} onSaved={onSaved} onCancel={() => setDialogOpen(false)} />
         </DialogContent>
       </Dialog>
     </div>
@@ -449,6 +601,10 @@ const SettingsTab = () => {
   const [token, setToken] = useState(settings.shopifyStorefrontToken);
   const [apiVersion, setApiVersion] = useState(settings.shopifyApiVersion);
   const [paymentsEnabled, setPaymentsEnabled] = useState(settings.paymentsEnabled);
+  const [shippingFlatRate, setShippingFlatRate] = useState(String(settings.shippingFlatRate));
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(
+    settings.freeShippingThreshold === null ? "" : String(settings.freeShippingThreshold),
+  );
   const [saving, setSaving] = useState(false);
 
   // keep local form in sync once settings finish loading
@@ -459,6 +615,10 @@ const SettingsTab = () => {
     setToken(settings.shopifyStorefrontToken);
     setApiVersion(settings.shopifyApiVersion);
     setPaymentsEnabled(settings.paymentsEnabled);
+    setShippingFlatRate(String(settings.shippingFlatRate));
+    setFreeShippingThreshold(
+      settings.freeShippingThreshold === null ? "" : String(settings.freeShippingThreshold),
+    );
   }, [settings.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
@@ -470,6 +630,8 @@ const SettingsTab = () => {
       shopifyStorefrontToken: token,
       shopifyApiVersion: apiVersion,
       paymentsEnabled,
+      shippingFlatRate: parseFloat(shippingFlatRate) || 0,
+      freeShippingThreshold: freeShippingThreshold.trim() === "" ? null : parseFloat(freeShippingThreshold) || 0,
     });
     setSaving(false);
     if (error) {
@@ -537,6 +699,36 @@ const SettingsTab = () => {
           {paymentsEnabled
             ? "Checkout sends customers to Stripe's hosted payment page. Requires the Stripe keys to be configured (see PAYMENTS.md in the repo)."
             : "Checkout records the order and tells the customer you'll contact them to arrange payment."}
+        </p>
+      </div>
+
+      <div className="space-y-4 border-t border-border pt-5">
+        <p className={label}>Shipping</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className={label}>Flat rate ($)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={shippingFlatRate}
+              onChange={(e) => setShippingFlatRate(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className={label}>Free over ($)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder="never"
+              value={freeShippingThreshold}
+              onChange={(e) => setFreeShippingThreshold(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
+          Charged automatically on Stripe checkout. Leave "Free over" blank to always charge the flat rate.
         </p>
       </div>
 
