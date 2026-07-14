@@ -234,8 +234,12 @@ const ProductForm = ({ product, onSaved, onCancel }: ProductFormProps) => {
           <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label className={inputLabel}>Sort order</Label>
+          <Label className={inputLabel}>Sort order / display number</Label>
           <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
+          <p className="font-body text-[10px] text-muted-foreground">
+            Controls grid position and is shown on the storefront as the zero-padded
+            product number (e.g. 25 → "025").
+          </p>
         </div>
         <div className="flex items-center gap-3 pt-6">
           <Switch checked={available} onCheckedChange={setAvailable} id="available" />

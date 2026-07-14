@@ -142,9 +142,12 @@ async function getManualStorefront(): Promise<StorefrontData> {
   const rows = (data as unknown as ProductRow[]) || [];
   const products = rows.map(manualRowToProduct);
 
+  // The displayed number is the product's own "Sort order" field, zero-padded
+  // — not a recomputed position — so you can pick up a numbering scheme
+  // (e.g. continuing 025, 026...) instead of it always restarting at 001.
   const displayNumbers: Record<string, string> = {};
-  products.forEach((p, i) => {
-    displayNumbers[p.node.handle] = String(i + 1).padStart(3, "0");
+  rows.forEach((row) => {
+    displayNumbers[row.handle] = String(Math.max(0, row.sort_order)).padStart(3, "0");
   });
 
   return { products, displayNumbers };
