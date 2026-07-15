@@ -5,9 +5,8 @@ import { type ShopifyProduct } from "@/lib/shopify";
 import { getProducts } from "@/lib/products";
 import { useCartStore } from "@/stores/cartStore";
 import { Navbar } from "@/components/Navbar";
-import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle, ZoomIn } from "lucide-react";
+import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
 import loadingSpinner from "@/assets/loading-spinner.gif";
-import ProductImageZoom from "@/components/ProductImageZoom";
 
 const MYSTERY_HANDLE = "untitled-oct1_21-14";
 
@@ -23,6 +22,14 @@ const MYSTERY_CAROUSEL_HANDLES = [
   "cactus-button-up",
   "sea-reactive-hoodies",
 ];
+
+const MAGNIFY_SCALE = 1.8;
+const MAGNIFY_DELAY_MS = 140; // hold this long before the magnifier engages
+const MAGNIFY_CANCEL_PX = 12; // finger movement past this, before engaging, means "swipe" not "hold"
+
+function clampPercent(n: number) {
+  return Math.min(85, Math.max(15, n));
+}
 
 const ProductDetail = () => {
   const { handle } = useParams<{ handle: string }>();
@@ -43,7 +50,9 @@ const ProductDetail = () => {
   const [showMystery, setShowMystery] = useState(false);
   const [openAccordion, setOpenAccordion] = useState<string | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
-  const [zoomOpen, setZoomOpen] = useState(false);
+  // Mobile-only "press and hold to magnify" — no lightbox, just an in-place
+  // scale-up while the finger is down, springing back on release.
+  const [magnifying, setMagnifying] = useState(false);
 
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -53,6 +62,10 @@ const ProductDetail = () => {
   const mysteryRef = useRef<HTMLDivElement>(null);
   const detailsScrollRef = useRef<HTMLDivElement>(null);
   const imageAreaRef = useRef<HTMLDivElement>(null);
+  const imageElRef = useRef<HTMLImageElement | null>(null);
+  const magnifyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const magnifyEngaged = useRef(false);
+  const magnifyOrigin = useRef({ x: 50, y: 50 });
 
   const addItem = useCartStore((s) => s.addItem);
   const isLoading = useCartStore((s) => s.isLoading);
@@ -143,14 +156,65 @@ const ProductDetail = () => {
   );
 
   // Touch handling on the image area
+  const clearMagnifyTimer = () => {
+    if (magnifyTimer.current) {
+      clearTimeout(magnifyTimer.current);
+      magnifyTimer.current = null;
+    }
+  };
+
   const handleImageTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+    const touch = e.touches[0];
+    touchStartX.current = touch.clientX;
+    touchStartY.current = touch.clientY;
+
+    magnifyEngaged.current = false;
+    clearMagnifyTimer();
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+    magnifyTimer.current = setTimeout(() => {
+      const el = imageElRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        magnifyOrigin.current = {
+          x: clampPercent(((clientX - rect.left) / rect.width) * 100),
+          y: clampPercent(((clientY - rect.top) / rect.height) * 100),
+        };
+      }
+      magnifyEngaged.current = true;
+      setMagnifying(true);
+    }, MAGNIFY_DELAY_MS);
+  };
+
+  const handleImageTouchMove = (e: React.TouchEvent) => {
+    if (magnifyEngaged.current) return; // already magnifying — hold steady, ignore drift
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartX.current);
+    const dy = Math.abs(touch.clientY - touchStartY.current);
+    if (dx > MAGNIFY_CANCEL_PX || dy > MAGNIFY_CANCEL_PX) {
+      clearMagnifyTimer(); // this is turning into a swipe, not a hold
+    }
+  };
+
+  const endMagnify = () => {
+    clearMagnifyTimer();
+    magnifyEngaged.current = false;
+    setMagnifying(false);
   };
 
   const imageSwipeHandled = useRef(false);
 
   const handleImageTouchEnd = (e: React.TouchEvent) => {
+    clearMagnifyTimer();
+    if (magnifyEngaged.current) {
+      // This touch was consumed by the magnifier — release, don't also navigate,
+      // even if the finger drifted while held (mark it handled for the page-level
+      // touchend, same as a real swipe would).
+      endMagnify();
+      imageSwipeHandled.current = true;
+      return;
+    }
+
     const deltaX = touchStartX.current - e.changedTouches[0].clientX;
     const deltaY = touchStartY.current - e.changedTouches[0].clientY;
     const absDeltaX = Math.abs(deltaX);
@@ -214,7 +278,6 @@ const ProductDetail = () => {
   // Wheel handler: scroll down = next, scroll up = prev (when no panels open)
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      if (zoomOpen) return; // the zoom overlay handles its own wheel-to-zoom
       if (isTransitioning) {
         e.preventDefault();
         return;
@@ -247,12 +310,11 @@ const ProductDetail = () => {
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
-  }, [currentProductIndex, goToImage, goToProduct, isTransitioning, panelsOpen, zoomOpen]);
+  }, [currentProductIndex, goToImage, goToProduct, isTransitioning, panelsOpen]);
 
   // Keyboard navigation
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (zoomOpen) return; // the zoom overlay owns arrow/Escape keys while open
       if (e.key === "ArrowLeft") goToImage(-1);
       if (e.key === "ArrowRight") goToImage(1);
       if (e.key === "ArrowUp") { e.preventDefault(); goToProduct(currentProductIndex - 1); }
@@ -266,7 +328,7 @@ const ProductDetail = () => {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentProductIndex, goToImage, goToProduct, navigate, showSizes, showDetails, showMystery, zoomOpen]);
+  }, [currentProductIndex, goToImage, goToProduct, navigate, showSizes, showDetails, showMystery]);
 
   const getVariantForOptions = (options: Record<string, string>) => {
     if (!product) return null;
@@ -374,7 +436,9 @@ const ProductDetail = () => {
           }`}
           style={panelsOpen ? { height: '45vh' } : undefined}
           onTouchStart={handleImageTouchStart}
+          onTouchMove={handleImageTouchMove}
           onTouchEnd={handleImageTouchEnd}
+          onTouchCancel={endMagnify}
         >
           <div className="flex items-center justify-center w-full flex-1 relative overflow-hidden">
             {!imageLoaded && slidePhase === 'idle' && (
@@ -389,17 +453,17 @@ const ProductDetail = () => {
                 key={`${product.handle}-${currentImageIndex}`}
                 src={image.url}
                 alt={image.altText || product.title}
-                className={`max-w-[90%] object-contain transition-[max-height] duration-300 ease-out cursor-zoom-in ${panelsOpen ? 'max-h-[38vh]' : 'max-h-[65vh]'}`}
-                onClick={() => {
-                  if (!isTransitioning && slidePhase === "idle") setZoomOpen(true);
-                }}
+                className={`max-w-[90%] object-contain transition-[max-height] duration-300 ease-out ${panelsOpen ? 'max-h-[38vh]' : 'max-h-[65vh]'}`}
                 style={{
-                  transition: slidePhase === 'idle' ? 'opacity 0.3s ease-out, max-height 0.3s ease-out' : 
-                    slidePhase === 'out' ? 'transform 0.28s cubic-bezier(0.4, 0, 1, 1), opacity 0.28s ease-out' :
+                  transformOrigin: `${magnifyOrigin.current.x}% ${magnifyOrigin.current.y}%`,
+                  transition: slidePhase === 'idle'
+                    ? `opacity 0.3s ease-out, max-height 0.3s ease-out, transform ${magnifying ? '0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : '0.3s cubic-bezier(0.22, 1, 0.36, 1)'}`
+                    : slidePhase === 'out' ? 'transform 0.28s cubic-bezier(0.4, 0, 1, 1), opacity 0.28s ease-out' :
                     'transform 0.32s cubic-bezier(0, 0, 0.2, 1), opacity 0.32s ease-in',
-                  transform: slidePhase === 'out' 
-                    ? `translateY(${slideDirection === 'up' ? '-105%' : '105%'})` 
-                    : 'translateY(0)',
+                  transform: slidePhase === 'out'
+                    ? `translateY(${slideDirection === 'up' ? '-105%' : '105%'})`
+                    : slidePhase === 'in' ? 'translateY(0)'
+                    : `translateY(0) scale(${magnifying ? MAGNIFY_SCALE : 1})`,
                   opacity: slidePhase === 'out' ? 0 : !imageLoaded && slidePhase === 'idle' ? 0 : 1,
                 }}
                 draggable={false}
@@ -407,6 +471,7 @@ const ProductDetail = () => {
                 decoding="async"
                 onLoad={() => setImageLoaded(true)}
                 ref={(el) => {
+                  imageElRef.current = el;
                   if (el && slidePhase === 'in') {
                     el.style.transition = 'none';
                     el.style.transform = `translateY(${slideDirection === 'up' ? '80%' : '-80%'})`;
@@ -421,20 +486,6 @@ const ProductDetail = () => {
                   }
                 }}
               />
-            )}
-            {image && slidePhase === "idle" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setZoomOpen(true);
-                }}
-                onTouchStart={(e) => e.stopPropagation()}
-                onTouchEnd={(e) => e.stopPropagation()}
-                className="absolute bottom-1 right-1 w-8 h-8 flex items-center justify-center rounded-full bg-background/70 text-foreground border border-border backdrop-blur-sm"
-                aria-label="Zoom in on product photo"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
             )}
           </div>
           {images.length > 1 && (
@@ -671,15 +722,6 @@ const ProductDetail = () => {
             />
           ))}
         </div>
-      )}
-
-      {zoomOpen && images.length > 0 && (
-        <ProductImageZoom
-          images={images.map((edge) => edge.node)}
-          initialIndex={currentImageIndex}
-          productTitle={product.title}
-          onClose={() => setZoomOpen(false)}
-        />
       )}
     </div>
   );
