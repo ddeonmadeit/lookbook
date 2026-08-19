@@ -10,7 +10,7 @@ import alteHaasBoldFont from "@/assets/coming-soon/fonts/AlteHaasGroteskBold.ttf
 import alteHaasRegularFont from "@/assets/coming-soon/fonts/AlteHaasGroteskRegular.ttf";
 
 // AW26 drop date — early-access countdown target.
-const TARGET = new Date("2026-08-25T00:00:00Z").getTime();
+const TARGET = new Date("2026-09-24T00:00:00Z").getTime();
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
