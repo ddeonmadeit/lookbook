@@ -123,7 +123,13 @@ Deno.serve(async (req) => {
       metadata: { order_id: order.id, shipping_zone: quote.zone },
       // Locked to the country the shopper already picked, so the shipping we
       // quoted can't be invalidated by changing the address inside Stripe.
-      shipping_address_collection: { allowed_countries: [destination as never] },
+      // (Stripe types this as a union of literal country codes; ours is only
+      // known at runtime, hence the cast.)
+      shipping_address_collection: {
+        allowed_countries: [
+          destination as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry,
+        ],
+      },
       shipping_options: [
         {
           shipping_rate_data: {
