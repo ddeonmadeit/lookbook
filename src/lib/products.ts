@@ -41,6 +41,8 @@ export interface ProductRow {
   available: boolean;
   sort_order: number;
   position: number;
+  /** Shipping weight in grams; 0 means "use the store default". */
+  weight_grams: number;
   created_at: string;
 }
 

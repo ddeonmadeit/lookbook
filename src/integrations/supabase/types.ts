@@ -56,6 +56,7 @@ export type Database = {
           available: boolean
           sort_order: number
           position: number
+          weight_grams: number
           created_at: string
           updated_at: string
         }
@@ -73,6 +74,7 @@ export type Database = {
           available?: boolean
           sort_order?: number
           position?: number
+          weight_grams?: number
           created_at?: string
           updated_at?: string
         }
@@ -90,7 +92,32 @@ export type Database = {
           available?: boolean
           sort_order?: number
           position?: number
+          weight_grams?: number
           created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shipping_rates: {
+        Row: {
+          id: string
+          zone: string
+          max_weight_grams: number
+          price: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          zone: string
+          max_weight_grams: number
+          price: number
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          zone?: string
+          max_weight_grams?: number
+          price?: number
           updated_at?: string
         }
         Relationships: []
@@ -106,6 +133,8 @@ export type Database = {
           payments_enabled: boolean
           shipping_flat_rate: number
           free_shipping_threshold: number | null
+          shipping_handling_fee: number
+          default_item_weight_grams: number
           updated_at: string
         }
         Insert: {
@@ -118,6 +147,8 @@ export type Database = {
           payments_enabled?: boolean
           shipping_flat_rate?: number
           free_shipping_threshold?: number | null
+          shipping_handling_fee?: number
+          default_item_weight_grams?: number
           updated_at?: string
         }
         Update: {
@@ -130,6 +161,8 @@ export type Database = {
           payments_enabled?: boolean
           shipping_flat_rate?: number
           free_shipping_threshold?: number | null
+          shipping_handling_fee?: number
+          default_item_weight_grams?: number
           updated_at?: string
         }
         Relationships: []
@@ -194,6 +227,14 @@ export type Database = {
           payment_provider: string
           payment_id: string | null
           paid_at: string | null
+          shipping_cost: number
+          shipping_country: string | null
+          total: number
+          tracking_number: string | null
+          tracking_carrier: string | null
+          shipped_at: string | null
+          refunded_amount: number
+          refunded_at: string | null
           created_at: string
         }
         Insert: {
@@ -210,6 +251,14 @@ export type Database = {
           payment_provider?: string
           payment_id?: string | null
           paid_at?: string | null
+          shipping_cost?: number
+          shipping_country?: string | null
+          total?: number
+          tracking_number?: string | null
+          tracking_carrier?: string | null
+          shipped_at?: string | null
+          refunded_amount?: number
+          refunded_at?: string | null
           created_at?: string
         }
         Update: {
@@ -226,6 +275,14 @@ export type Database = {
           payment_provider?: string
           payment_id?: string | null
           paid_at?: string | null
+          shipping_cost?: number
+          shipping_country?: string | null
+          total?: number
+          tracking_number?: string | null
+          tracking_carrier?: string | null
+          shipped_at?: string | null
+          refunded_amount?: number
+          refunded_at?: string | null
           created_at?: string
         }
         Relationships: []

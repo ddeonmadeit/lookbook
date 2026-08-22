@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminThemeStore } from "@/stores/adminThemeStore";
 
@@ -40,6 +40,9 @@ const DARK_CHART_COLORS = {
 };
 
 type RangeDays = 7 | 30;
+
+/** Variants at or below this many units show in the low-stock banner. */
+const LOW_STOCK_THRESHOLD = 3;
 
 interface OrderLite {
   subtotal: number;
@@ -138,6 +141,7 @@ const OverviewTab = () => {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<OrderLite[]>([]);
   const [views, setViews] = useState<ViewLite[]>([]);
+  const [lowStock, setLowStock] = useState<Array<{ title: string; variant: string; stock: number }>>([]);
 
   useEffect(() => {
     (async () => {
@@ -160,6 +164,29 @@ const OverviewTab = () => {
       setLoading(false);
     })();
   }, [range]);
+
+  // Stock runs out silently otherwise — surface anything at or below the
+  // threshold so it can be restocked before it sells out.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("products").select("title,variants,available");
+      const low: Array<{ title: string; variant: string; stock: number }> = [];
+      for (const p of (data as Array<{ title: string; variants: unknown }>) || []) {
+        for (const v of (p.variants as Array<Record<string, unknown>>) || []) {
+          const stock = v.stock as number | null | undefined;
+          if (stock !== null && stock !== undefined && stock <= LOW_STOCK_THRESHOLD) {
+            const title = String(v.title ?? "");
+            low.push({
+              title: p.title,
+              variant: title === "Default Title" ? "" : title,
+              stock: Number(stock),
+            });
+          }
+        }
+      }
+      setLowStock(low.sort((a, b) => a.stock - b.stock));
+    })();
+  }, []);
 
   const { series, stats, topProducts, recentOrders } = useMemo(() => {
     const now = new Date();
@@ -275,6 +302,37 @@ const OverviewTab = () => {
           </button>
         ))}
       </div>
+
+      {/* Low stock — the one thing that costs sales if it goes unnoticed */}
+      {lowStock.length > 0 && (
+        <div className="border border-border rounded-md p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+            <p className="font-body text-[11px] uppercase tracking-[0.1em]">
+              Low stock — {lowStock.length} variant{lowStock.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {lowStock.slice(0, 12).map((s, i) => (
+              <span
+                key={i}
+                className="font-body text-[10px] border border-border rounded px-2 py-1 whitespace-nowrap"
+              >
+                {s.title}
+                {s.variant ? ` · ${s.variant}` : ""}
+                <span className={s.stock === 0 ? "text-accent ml-1.5" : "text-muted-foreground ml-1.5"}>
+                  {s.stock === 0 ? "sold out" : `${s.stock} left`}
+                </span>
+              </span>
+            ))}
+            {lowStock.length > 12 && (
+              <span className="font-body text-[10px] text-muted-foreground self-center">
+                +{lowStock.length - 12} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

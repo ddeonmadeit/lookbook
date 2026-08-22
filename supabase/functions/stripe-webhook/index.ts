@@ -68,6 +68,11 @@ Deno.serve(async (req) => {
           .join("\n")
       : null;
 
+    // Trust Stripe's figures for what was actually collected, rather than the
+    // amounts we quoted when the session was created.
+    const shippingCharged = (session.total_details?.amount_shipping ?? 0) / 100;
+    const totalCharged = (session.amount_total ?? 0) / 100;
+
     await supabase
       .from("orders")
       .update({
@@ -78,6 +83,9 @@ Deno.serve(async (req) => {
         customer_email: session.customer_details?.email ?? "(not provided)",
         customer_phone: session.customer_details?.phone ?? null,
         shipping_address: addressText,
+        shipping_cost: shippingCharged,
+        shipping_country: addr?.country ?? null,
+        total: totalCharged,
       })
       .eq("id", orderId);
 
@@ -103,6 +111,25 @@ Deno.serve(async (req) => {
         .update({ status: "cancelled" })
         .eq("id", orderId)
         .eq("status", "pending");
+    }
+  }
+
+  // Refunds can also be issued from the Stripe dashboard, so mirror them back
+  // here rather than only tracking the ones started from our own dashboard.
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    const paymentIntentId = String(charge.payment_intent ?? "");
+    if (paymentIntentId) {
+      const refunded = (charge.amount_refunded ?? 0) / 100;
+      const fully = charge.amount_refunded >= charge.amount;
+      await supabase
+        .from("orders")
+        .update({
+          refunded_amount: refunded,
+          refunded_at: new Date().toISOString(),
+          ...(fully ? { status: "refunded" } : {}),
+        })
+        .eq("payment_id", paymentIntentId);
     }
   }
 

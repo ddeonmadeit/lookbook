@@ -86,6 +86,7 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
   const [currency, setCurrency] = useState(product?.currency ?? "USD");
   const [available, setAvailable] = useState(product?.available ?? true);
   const [sortOrder, setSortOrder] = useState(String(product?.sort_order ?? 0));
+  const [weightGrams, setWeightGrams] = useState(String(product?.weight_grams ?? ""));
   const [images, setImages] = useState<ManualImage[]>(product?.images ?? []);
   const [imageUrl, setImageUrl] = useState("");
   const [options, setOptions] = useState<Array<{ name: string; valuesText: string }>>(
@@ -188,6 +189,7 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
       variants: variants as unknown as Json,
       available,
       sort_order: parseInt(sortOrder, 10) || 0,
+      weight_grams: Math.max(0, parseInt(weightGrams, 10) || 0),
       ...(product ? {} : { position: nextPosition }),
     };
 
@@ -251,6 +253,21 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
           <p className="font-body text-[10px] text-muted-foreground">
             Shown on the storefront as the zero-padded product number (e.g. 25 →
             "025"). Grid position is set separately from the products list.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className={inputLabel}>Shipping weight (g)</Label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="store default"
+            value={weightGrams}
+            onChange={(e) => setWeightGrams(e.target.value)}
+          />
+          <p className="font-body text-[10px] text-muted-foreground">
+            Used to price shipping. Include packaging. Blank uses the default
+            set in Settings.
           </p>
         </div>
         <div className="flex items-center gap-3 pt-6">

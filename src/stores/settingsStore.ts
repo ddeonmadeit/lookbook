@@ -21,6 +21,10 @@ export interface StoreSettings {
   shippingFlatRate: number;
   /** Subtotal at/above which shipping is free. Null = never auto-free. */
   freeShippingThreshold: number | null;
+  /** Added on top of every carrier rate (packaging, insurance, overhead). */
+  shippingHandlingFee: number;
+  /** Weight assumed for a product that has no weight set. */
+  defaultItemWeightGrams: number;
 }
 
 interface SettingsState extends StoreSettings {
@@ -41,6 +45,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   paymentsEnabled: false,
   shippingFlatRate: 0,
   freeShippingThreshold: null,
+  shippingHandlingFee: 8.4,
+  defaultItemWeightGrams: 400,
   loaded: false,
   loading: false,
 
@@ -67,6 +73,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
             data.free_shipping_threshold === null || data.free_shipping_threshold === undefined
               ? null
               : Number(data.free_shipping_threshold),
+          shippingHandlingFee: Number(data.shipping_handling_fee ?? 8.4),
+          defaultItemWeightGrams: Number(data.default_item_weight_grams ?? 400),
         });
       }
     } catch (err) {
@@ -90,6 +98,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         payments_enabled: next.paymentsEnabled,
         shipping_flat_rate: next.shippingFlatRate,
         free_shipping_threshold: next.freeShippingThreshold,
+        shipping_handling_fee: next.shippingHandlingFee,
+        default_item_weight_grams: next.defaultItemWeightGrams,
       });
 
     if (error) return { error: error.message };
@@ -103,6 +113,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       paymentsEnabled: next.paymentsEnabled,
       shippingFlatRate: next.shippingFlatRate,
       freeShippingThreshold: next.freeShippingThreshold,
+      shippingHandlingFee: next.shippingHandlingFee,
+      defaultItemWeightGrams: next.defaultItemWeightGrams,
     });
     return { error: null };
   },
@@ -124,5 +136,7 @@ export async function ensureSettings(): Promise<StoreSettings> {
     paymentsEnabled: s.paymentsEnabled,
     shippingFlatRate: s.shippingFlatRate,
     freeShippingThreshold: s.freeShippingThreshold,
+    shippingHandlingFee: s.shippingHandlingFee,
+    defaultItemWeightGrams: s.defaultItemWeightGrams,
   };
 }

@@ -44,6 +44,9 @@ import {
   ExternalLink,
   GripVertical,
   ArrowUpDown,
+  Truck,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -72,13 +75,21 @@ interface OrderRow {
   id: string;
   items: Array<{ title: string; quantity: number }>;
   subtotal: number;
+  shipping_cost: number;
+  total: number;
   currency: string;
   customer_name: string;
   customer_email: string;
   customer_phone: string | null;
   shipping_address: string | null;
+  shipping_country: string | null;
   notes: string | null;
   status: string;
+  payment_provider: string;
+  tracking_number: string | null;
+  tracking_carrier: string | null;
+  shipped_at: string | null;
+  refunded_amount: number;
   created_at: string;
 }
 
@@ -424,32 +435,142 @@ const ProductsTab = () => {
 /* -------------------------------------------------------------------------- */
 /* Orders                                                                      */
 /* -------------------------------------------------------------------------- */
-const ORDER_STATUSES = ["pending", "paid", "fulfilled", "cancelled"] as const;
+const ORDER_STATUSES = ["pending", "paid", "fulfilled", "cancelled", "refunded"] as const;
+
+const CARRIERS = ["Australia Post", "DHL", "FedEx", "UPS", "Sendle", "Aramex", "Other"];
+
+/** "AUD 248.40" — orders always show cents, unlike the storefront's round prices. */
+function orderMoney(currency: string, amount: number) {
+  return `${currency} ${(Number(amount) || 0).toFixed(2)}`;
+}
 
 const OrdersTab = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) toast.error("Failed to load orders", { description: error.message });
-      setOrders((data as unknown as OrderRow[]) || []);
-      setLoading(false);
-    })();
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load orders", { description: error.message });
+    setOrders((data as unknown as OrderRow[]) || []);
+    setLoading(false);
   }, []);
 
-  const setStatus = async (id: string, status: string) => {
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const patch = async (id: string, fields: Partial<OrderRow>) => {
     const prev = orders;
-    setOrders((os) => os.map((o) => (o.id === id ? { ...o, status } : o)));
-    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+    setOrders((os) => os.map((o) => (o.id === id ? { ...o, ...fields } : o)));
+    const { error } = await supabase.from("orders").update(fields).eq("id", id);
     if (error) {
       setOrders(prev);
       toast.error("Could not update order", { description: error.message });
+      return false;
     }
+    return true;
+  };
+
+  const setStatus = (id: string, status: string) => patch(id, { status });
+
+  const saveTracking = async (o: OrderRow, number: string, carrier: string) => {
+    const trimmed = number.trim();
+    setBusyId(o.id);
+    const ok = await patch(o.id, {
+      tracking_number: trimmed || null,
+      tracking_carrier: trimmed ? carrier : null,
+      shipped_at: trimmed ? new Date().toISOString() : null,
+      ...(trimmed && o.status === "paid" ? { status: "fulfilled" } : {}),
+    });
+    setBusyId(null);
+    if (ok) toast.success(trimmed ? "Tracking saved — order marked fulfilled" : "Tracking cleared");
+  };
+
+  const refund = async (o: OrderRow) => {
+    const paid = Number(o.total) || Number(o.subtotal) || 0;
+    const remaining = paid - (Number(o.refunded_amount) || 0);
+    const input = prompt(
+      `Refund amount in ${o.currency} (up to ${remaining.toFixed(2)}).\nLeave as-is for a full refund.`,
+      remaining.toFixed(2),
+    );
+    if (input === null) return;
+    const amount = parseFloat(input);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+
+    setBusyId(o.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("refund-order", {
+        body: { order_id: o.id, amount },
+      });
+      const result = data as { ok?: boolean; refunded?: number; error?: string } | null;
+      if (error || !result?.ok) {
+        toast.error("Refund failed", {
+          description: result?.error || error?.message || "Please try again.",
+        });
+        return;
+      }
+      toast.success(`Refunded ${orderMoney(o.currency, amount)}`);
+      load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const filtered = orders.filter((o) => {
+    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      o.customer_name?.toLowerCase().includes(q) ||
+      o.customer_email?.toLowerCase().includes(q) ||
+      o.tracking_number?.toLowerCase().includes(q) ||
+      o.id.toLowerCase().includes(q) ||
+      o.items?.some((it) => it.title?.toLowerCase().includes(q))
+    );
+  });
+
+  const handleExport = () => {
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = filtered.map((o) =>
+      [
+        o.id,
+        new Date(o.created_at).toISOString(),
+        o.status,
+        o.customer_name,
+        o.customer_email,
+        o.customer_phone,
+        o.currency,
+        Number(o.subtotal || 0).toFixed(2),
+        Number(o.shipping_cost || 0).toFixed(2),
+        Number(o.total || o.subtotal || 0).toFixed(2),
+        Number(o.refunded_amount || 0).toFixed(2),
+        o.shipping_country,
+        (o.shipping_address || "").replace(/\n/g, ", "),
+        o.tracking_carrier,
+        o.tracking_number,
+        o.items?.map((it) => `${it.quantity}x ${it.title}`).join("; "),
+      ]
+        .map(esc)
+        .join(","),
+    );
+    const header =
+      "order_id,placed_at,status,customer,email,phone,currency,subtotal,shipping,total,refunded,country,address,carrier,tracking,items";
+    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `knots-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
@@ -464,61 +585,192 @@ const OrdersTab = () => {
     return <p className="font-body text-[12px] text-muted-foreground py-12 text-center">No orders yet.</p>;
   }
 
+  const revenue = orders
+    .filter((o) => o.status === "paid" || o.status === "fulfilled")
+    .reduce((s, o) => s + (Number(o.total) || Number(o.subtotal) || 0), 0);
+
   return (
     <div className="space-y-4">
-      {orders.map((o) => (
-        <div key={o.id} className="border border-border rounded-md p-4">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="font-body text-[12px] font-medium">{o.customer_name}</p>
-              <p className="font-body text-[11px] text-muted-foreground">{o.customer_email}</p>
-              {o.customer_phone && (
-                <p className="font-body text-[11px] text-muted-foreground">{o.customer_phone}</p>
-              )}
-            </div>
-            <div className="text-right">
-              <p className="font-body text-[12px] font-medium">
-                {o.currency} {Number(o.subtotal).toFixed(0)}
-              </p>
-              <p className="font-body text-[10px] text-muted-foreground">
-                {new Date(o.created_at).toLocaleDateString()}
-              </p>
-              <div className="mt-1 flex justify-end">
-                <Select value={o.status} onValueChange={(v) => setStatus(o.id, v)}>
-                  <SelectTrigger className="h-7 w-[110px] text-[11px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ORDER_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} className="text-[12px]">
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 border-t border-border pt-2 space-y-0.5">
-            {o.items?.map((it, i) => (
-              <p key={i} className="font-body text-[11px] text-muted-foreground">
-                {it.quantity} × {it.title}
-              </p>
+      <div className="flex flex-wrap gap-2 items-center">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, email, tracking, item…"
+          className="h-9 flex-1 min-w-[180px] text-[12px]"
+        />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="h-9 w-[130px] text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-[12px]">All statuses</SelectItem>
+            {ORDER_STATUSES.map((s) => (
+              <SelectItem key={s} value={s} className="text-[12px]">{s}</SelectItem>
             ))}
-          </div>
-          {o.shipping_address && (
-            <p className="font-body text-[11px] text-muted-foreground mt-2 whitespace-pre-wrap">
-              {o.shipping_address}
-            </p>
-          )}
-          {o.notes && (
-            <p className="font-body text-[11px] text-muted-foreground mt-2 italic">“{o.notes}”</p>
-          )}
-        </div>
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" onClick={handleExport} className="h-9">
+          <Download className="w-4 h-4 sm:mr-1" />
+          <span className="hidden sm:inline">Export</span>
+        </Button>
+      </div>
+
+      <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
+        {filtered.length} of {orders.length} order{orders.length !== 1 ? "s" : ""} · {orderMoney("AUD", revenue)} collected
+      </p>
+
+      {filtered.length === 0 && (
+        <p className="font-body text-[12px] text-muted-foreground py-8 text-center">
+          No orders match that search.
+        </p>
+      )}
+
+      {filtered.map((o) => (
+        <OrderCard
+          key={o.id}
+          order={o}
+          busy={busyId === o.id}
+          onStatus={setStatus}
+          onSaveTracking={saveTracking}
+          onRefund={refund}
+        />
       ))}
     </div>
   );
 };
+
+const OrderCard = ({
+  order: o,
+  busy,
+  onStatus,
+  onSaveTracking,
+  onRefund,
+}: {
+  order: OrderRow;
+  busy: boolean;
+  onStatus: (id: string, status: string) => void;
+  onSaveTracking: (o: OrderRow, number: string, carrier: string) => void;
+  onRefund: (o: OrderRow) => void;
+}) => {
+  const [tracking, setTracking] = useState(o.tracking_number ?? "");
+  const [carrier, setCarrier] = useState(o.tracking_carrier ?? CARRIERS[0]);
+
+  const paid = Number(o.total) || Number(o.subtotal) || 0;
+  const refunded = Number(o.refunded_amount) || 0;
+  const refundable = o.payment_provider === "stripe" && paid - refunded > 0.005;
+  const dirty = (o.tracking_number ?? "") !== tracking.trim() ||
+    (tracking.trim() !== "" && (o.tracking_carrier ?? CARRIERS[0]) !== carrier);
+
+  return (
+    <div className="border border-border rounded-md p-4">
+      <div className="flex justify-between items-start gap-3">
+        <div className="min-w-0">
+          <p className="font-body text-[12px] font-medium truncate">{o.customer_name}</p>
+          <p className="font-body text-[11px] text-muted-foreground truncate">{o.customer_email}</p>
+          {o.customer_phone && (
+            <p className="font-body text-[11px] text-muted-foreground">{o.customer_phone}</p>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="font-body text-[12px] font-medium">{orderMoney(o.currency, paid)}</p>
+          {Number(o.shipping_cost) > 0 && (
+            <p className="font-body text-[10px] text-muted-foreground">
+              incl. {orderMoney(o.currency, o.shipping_cost)} shipping
+            </p>
+          )}
+          {refunded > 0 && (
+            <p className="font-body text-[10px] text-accent">
+              −{orderMoney(o.currency, refunded)} refunded
+            </p>
+          )}
+          <p className="font-body text-[10px] text-muted-foreground">
+            {new Date(o.created_at).toLocaleDateString()}
+          </p>
+          <div className="mt-1 flex justify-end">
+            <Select value={o.status} onValueChange={(v) => onStatus(o.id, v)}>
+              <SelectTrigger className="h-7 w-[110px] text-[11px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ORDER_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="text-[12px]">
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 border-t border-border pt-2 space-y-0.5">
+        {o.items?.map((it, i) => (
+          <p key={i} className="font-body text-[11px] text-muted-foreground">
+            {it.quantity} × {it.title}
+          </p>
+        ))}
+      </div>
+
+      {o.shipping_address && (
+        <p className="font-body text-[11px] text-muted-foreground mt-2 whitespace-pre-wrap">
+          {o.shipping_address}
+        </p>
+      )}
+      {o.notes && (
+        <p className="font-body text-[11px] text-muted-foreground mt-2 italic">“{o.notes}”</p>
+      )}
+
+      {/* Fulfilment: saving a tracking number marks a paid order fulfilled. */}
+      <div className="mt-3 border-t border-border pt-3 flex flex-wrap items-center gap-2">
+        <Select value={carrier} onValueChange={setCarrier}>
+          <SelectTrigger className="h-8 w-[140px] text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CARRIERS.map((c) => (
+              <SelectItem key={c} value={c} className="text-[12px]">{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          value={tracking}
+          onChange={(e) => setTracking(e.target.value)}
+          placeholder="Tracking number"
+          className="h-8 flex-1 min-w-[140px] text-[12px]"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-[11px]"
+          disabled={busy || !dirty}
+          onClick={() => onSaveTracking(o, tracking, carrier)}
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5 sm:mr-1" />}
+          <span className="hidden sm:inline">Save</span>
+        </Button>
+        {refundable && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[11px] text-muted-foreground"
+            disabled={busy}
+            onClick={() => onRefund(o)}
+          >
+            <RotateCcw className="w-3.5 h-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Refund</span>
+          </Button>
+        )}
+      </div>
+      {o.shipped_at && (
+        <p className="font-body text-[10px] text-muted-foreground mt-1.5">
+          Shipped {new Date(o.shipped_at).toLocaleDateString()}
+          {o.tracking_carrier ? ` via ${o.tracking_carrier}` : ""}
+        </p>
+      )}
+    </div>
+  );
+};
+
 
 /* -------------------------------------------------------------------------- */
 /* Early access phone signups (from the "coming soon" gate)                   */
@@ -600,6 +852,172 @@ const SignupsTab = () => {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Shipping rate card                                                          */
+/* -------------------------------------------------------------------------- */
+interface ShippingRateRow {
+  id: string;
+  zone: string;
+  max_weight_grams: number;
+  price: number;
+}
+
+const ZONE_ORDER = ["AU", "NZ", "ASIA", "NA_ME", "ROW"] as const;
+const ZONE_NAMES: Record<string, string> = {
+  AU: "Australia",
+  NZ: "New Zealand",
+  ASIA: "Asia & Pacific",
+  NA_ME: "North America & Middle East",
+  ROW: "Rest of world",
+};
+
+/**
+ * Carrier prices by destination zone and parcel weight. Seeded with Australia
+ * Post rates ex-Sydney; edit here whenever the carrier repricing lands, no
+ * deploy needed.
+ */
+const ShippingRatesEditor = () => {
+  const [rates, setRates] = useState<ShippingRateRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dirty, setDirty] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("shipping_rates")
+        .select("*")
+        .order("zone")
+        .order("max_weight_grams");
+      if (error) toast.error("Failed to load shipping rates", { description: error.message });
+      setRates((data as unknown as ShippingRateRow[]) || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  const tiers = [...new Set(rates.map((r) => r.max_weight_grams))].sort((a, b) => a - b);
+  const zones = ZONE_ORDER.filter((z) => rates.some((r) => r.zone === z));
+
+  const valueFor = (zone: string, tier: number) => {
+    const row = rates.find((r) => r.zone === zone && r.max_weight_grams === tier);
+    if (!row) return { id: null as string | null, value: "" };
+    return { id: row.id, value: dirty[row.id] ?? String(row.price) };
+  };
+
+  const save = async () => {
+    const entries = Object.entries(dirty);
+    if (entries.length === 0) return;
+    setSaving(true);
+    const results = await Promise.all(
+      entries.map(([id, raw]) =>
+        supabase
+          .from("shipping_rates")
+          .update({ price: Math.max(0, parseFloat(raw) || 0) })
+          .eq("id", id),
+      ),
+    );
+    setSaving(false);
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      toast.error("Could not save rates", { description: failed.error.message });
+      return;
+    }
+    setRates((rs) =>
+      rs.map((r) => (dirty[r.id] !== undefined ? { ...r, price: parseFloat(dirty[r.id]) || 0 } : r)),
+    );
+    setDirty({});
+    toast.success("Shipping rates saved");
+  };
+
+  if (loading) {
+    return (
+      <div className="border-t border-border pt-5 flex justify-center py-6">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (rates.length === 0) {
+    return (
+      <div className="border-t border-border pt-5">
+        <p className="font-body text-[11px] text-muted-foreground">
+          No shipping rate card found — checkout will fall back to the flat rate.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 border-t border-border pt-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+          Rate card — carrier cost ex-Sydney (AUD)
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-[11px]"
+          disabled={saving || Object.keys(dirty).length === 0}
+          onClick={save}
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save rates"}
+        </Button>
+      </div>
+
+      <div className="border border-border rounded-md overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-[10px]">Destination</TableHead>
+              {tiers.map((t) => (
+                <TableHead key={t} className="text-[10px] text-right whitespace-nowrap">
+                  ≤{t >= 1000 ? `${t / 1000}kg` : `${t}g`}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {zones.map((zone) => (
+              <TableRow key={zone}>
+                <TableCell className="font-body text-[11px] whitespace-nowrap">
+                  {ZONE_NAMES[zone] ?? zone}
+                </TableCell>
+                {tiers.map((tier) => {
+                  const { id, value } = valueFor(zone, tier);
+                  return (
+                    <TableCell key={tier} className="p-1">
+                      {id ? (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.05"
+                          value={value}
+                          onChange={(e) =>
+                            setDirty((d) => ({ ...d, [id]: e.target.value }))
+                          }
+                          className="h-8 w-20 text-[11px] text-right"
+                        />
+                      ) : (
+                        <span className="font-body text-[11px] text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
+        Seeded from Australia Post's published rates — verify against auspost.com.au
+        before you go live. The handling fee above is added on top of whichever
+        cell applies. Parcels heavier than the largest tier are billed as multiple
+        parcels.
+      </p>
+    </div>
+  );
+};
+/* -------------------------------------------------------------------------- */
 /* Settings                                                                    */
 /* -------------------------------------------------------------------------- */
 const SettingsTab = () => {
@@ -614,6 +1032,8 @@ const SettingsTab = () => {
   const [freeShippingThreshold, setFreeShippingThreshold] = useState(
     settings.freeShippingThreshold === null ? "" : String(settings.freeShippingThreshold),
   );
+  const [handlingFee, setHandlingFee] = useState(String(settings.shippingHandlingFee));
+  const [defaultWeight, setDefaultWeight] = useState(String(settings.defaultItemWeightGrams));
   const [saving, setSaving] = useState(false);
 
   // keep local form in sync once settings finish loading
@@ -628,6 +1048,8 @@ const SettingsTab = () => {
     setFreeShippingThreshold(
       settings.freeShippingThreshold === null ? "" : String(settings.freeShippingThreshold),
     );
+    setHandlingFee(String(settings.shippingHandlingFee));
+    setDefaultWeight(String(settings.defaultItemWeightGrams));
   }, [settings.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
@@ -641,6 +1063,8 @@ const SettingsTab = () => {
       paymentsEnabled,
       shippingFlatRate: parseFloat(shippingFlatRate) || 0,
       freeShippingThreshold: freeShippingThreshold.trim() === "" ? null : parseFloat(freeShippingThreshold) || 0,
+      shippingHandlingFee: parseFloat(handlingFee) || 0,
+      defaultItemWeightGrams: parseInt(defaultWeight, 10) || 0,
     });
     setSaving(false);
     if (error) {
@@ -715,13 +1139,14 @@ const SettingsTab = () => {
         <p className={label}>Shipping</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className={label}>Flat rate ($)</Label>
+            <Label className={label}>Handling fee ($)</Label>
             <Input
               type="number"
               inputMode="decimal"
               min={0}
-              value={shippingFlatRate}
-              onChange={(e) => setShippingFlatRate(e.target.value)}
+              step="0.01"
+              value={handlingFee}
+              onChange={(e) => setHandlingFee(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -735,11 +1160,35 @@ const SettingsTab = () => {
               onChange={(e) => setFreeShippingThreshold(e.target.value)}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label className={label}>Default item weight (g)</Label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={defaultWeight}
+              onChange={(e) => setDefaultWeight(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className={label}>Fallback flat rate ($)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={shippingFlatRate}
+              onChange={(e) => setShippingFlatRate(e.target.value)}
+            />
+          </div>
         </div>
         <p className="font-body text-[10px] text-muted-foreground leading-relaxed">
-          Charged automatically on Stripe checkout. Leave "Free over" blank to always charge the flat rate.
+          Checkout prices each parcel from the rate card below by destination and
+          total weight, then adds the handling fee. The fallback flat rate is only
+          used if a zone has no rates at all.
         </p>
       </div>
+
+      <ShippingRatesEditor />
 
       <div className="space-y-4 border-t border-border pt-5">
         <p className={label}>Shopify connection</p>

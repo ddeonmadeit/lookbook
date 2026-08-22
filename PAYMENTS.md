@@ -1,60 +1,95 @@
-# Secure payments (Stripe)
+# Payments & shipping
 
-The payment rails are fully built and deployed. Customers check out on
-**Stripe's hosted payment page** — the industry standard used by millions of
-stores:
+Checkout now runs **entirely on knotsss.com**. Stripe's payment form is
+embedded in our own checkout page — the shopper is never redirected to
+stripe.com and never has to complete anything by email.
 
-- Card details **never touch this website** (they're entered on stripe.com's
-  encrypted page), so there's nothing for an attacker to steal here.
-- Prices are **re-validated server-side** on every checkout — a tampered
-  browser can't change what gets charged.
-- An order is only marked **paid** (and stock only decremented) when Stripe's
-  signed webhook confirms the money was actually collected.
+The flow:
 
-What's live already:
+1. Shopper picks a delivery country on our checkout page.
+2. We quote real shipping from Sydney (see below) and show
+   subtotal / shipping / total before they commit.
+3. They pay inline. Card details go straight to Stripe — they never touch our
+   servers.
+4. Stripe's signed webhook marks the order paid and decrements stock.
+
+Prices, weights and the shipping charge are all recalculated server-side, so a
+tampered browser can't change what it gets charged.
+
+## What's live already
 
 | Piece | Status |
 |---|---|
-| `create-checkout` edge function (server-validated prices + stock) | deployed |
-| `stripe-webhook` edge function (marks paid, decrements stock) | deployed |
-| Checkout page switches to "Pay securely" when payments are on | done |
-| `/checkout/success` thank-you page | done |
-| Admin → Settings → "Online payments" toggle | done |
+| Weight + destination based shipping (`shipping-quote`) | deployed |
+| `create-checkout` — embedded Stripe session, server-priced | deployed |
+| `checkout-status` — confirms payment before we claim success | deployed |
+| `stripe-webhook` — marks paid, decrements stock, mirrors refunds | deployed |
+| `refund-order` — refund from the dashboard (admin only) | deployed |
+| Shipping rate card + handling fee, editable in Settings | deployed |
+| Order fulfilment: tracking, search, CSV export, refunds | deployed |
 
-## What only you can do: create the Stripe account
+## What only you can do: connect Stripe
 
-1. Sign up at **https://stripe.com** — it will ask for your business details
-   and the bank account where payouts should land. (This is the legal/KYC part
-   no one can do for you.)
-2. Once in the Stripe Dashboard, go to **Developers → API keys** and copy the
-   **Secret key** (starts `sk_live_…`, or `sk_test_…` for test mode).
+Until this is done, checkout falls back to the old "we'll contact you" order
+form. Nothing else breaks.
 
-## Then either
+1. Sign up at **https://stripe.com** and complete the business/bank details.
+2. **Developers → API keys** — copy both:
+   - **Publishable key** (`pk_live_…` / `pk_test_…`)
+   - **Secret key** (`sk_live_…` / `sk_test_…`)
+3. **Developers → Webhooks → Add endpoint**
+   - URL: `https://yutmjcyqfxekooqplcqb.supabase.co/functions/v1/stripe-webhook`
+   - Events: `checkout.session.completed`, `checkout.session.expired`,
+     `charge.refunded`
+   - Copy the **signing secret** (`whsec_…`).
+4. In the Supabase dashboard → **Edge Functions → Secrets**, add all three:
+   - `STRIPE_SECRET_KEY` = `sk_…`
+   - `STRIPE_PUBLISHABLE_KEY` = `pk_…`
+   - `STRIPE_WEBHOOK_SECRET` = `whsec_…`
+5. Dashboard → **Settings → Online payments → On** → Save.
 
-**Option A — hand me the key** (fastest): paste the secret key in chat and
-I'll set both function secrets and create the webhook endpoint via Stripe's
-API. (Like the Supabase token: revoke/rotate it after if you prefer — rolling
-the key in the Stripe dashboard takes one click.)
+Test with card `4242 4242 4242 4242` (any future expiry/CVC) in test mode
+first: the order should appear under Orders as **paid**, with the shipping
+amount broken out, and stock should drop.
 
-**Option B — do it yourself:**
+To match the site's look, set your brand colours under Stripe Dashboard →
+**Settings → Branding** — that's what the embedded form uses.
 
-1. In the Stripe Dashboard: **Developers → Webhooks → Add endpoint**
-   - Endpoint URL: `https://yutmjcyqfxekooqplcqb.supabase.co/functions/v1/stripe-webhook`
-   - Events: `checkout.session.completed` and `checkout.session.expired`
-   - After creating it, copy the **Signing secret** (`whsec_…`).
-2. In the Supabase Dashboard: **Edge Functions → Secrets** (or
-   `supabase secrets set` via CLI), add:
-   - `STRIPE_SECRET_KEY` = your `sk_…` key
-   - `STRIPE_WEBHOOK_SECRET` = the `whsec_…` signing secret
+## Shipping
 
-## Switch it on
+Shipping is priced per parcel from **destination zone × total weight**, then
+the **handling fee** is added on top.
 
-In your admin dashboard → **Settings → Online payments → On** → Save.
-Checkout immediately starts sending customers to Stripe.
+- **Zones** follow Australia Post: Australia, New Zealand, Asia & Pacific,
+  North America & Middle East, Rest of world.
+- **Weight** is the sum of each product's *Shipping weight (g)* × quantity.
+  Products without a weight use the *Default item weight* from Settings.
+- **Handling fee** defaults to **$8.40** and is added once per order.
+- Parcels heavier than the largest tier are billed as multiple parcels.
+- Set *Free over ($)* to give free shipping above a subtotal.
 
-## Test it before going live
+### The rate card
 
-Use Stripe **test mode** keys first: checkout with card number
-`4242 4242 4242 4242`, any future expiry, any CVC. The order should appear in
-your admin → Orders as **paid**, and the item's stock should drop. Then swap
-in the live keys.
+Seeded with **indicative Australia Post rates ex-Sydney** — domestic Parcel
+Post and International Standard (tracked). Every cell is editable in
+**Settings → Rate card**, so correct them against
+[auspost.com.au](https://auspost.com.au/business/shipping/compare-postage-options)
+before going live, and whenever Australia Post reprices. No redeploy needed.
+
+Worked example with the seeded rates, a 400 g cap:
+
+| Destination | Carrier | + handling | Charged |
+|---|---|---|---|
+| Australia | $10.95 | $8.40 | **$19.35** |
+| New Zealand | $16.85 | $8.40 | **$25.25** |
+| Japan | $21.55 | $8.40 | **$29.95** |
+| United States | $27.20 | $8.40 | **$35.60** |
+| United Kingdom | $30.75 | $8.40 | **$39.15** |
+
+**Set a weight on every product** (Products → edit → Shipping weight). Until
+you do, everything quotes at the 400 g default, which will undercharge on
+heavier items like jackets and jeans.
+
+If you'd rather pull live rates straight from Australia Post instead of a rate
+card, that needs an AusPost developer API key — the quote function is written
+so only its price lookup would need swapping.

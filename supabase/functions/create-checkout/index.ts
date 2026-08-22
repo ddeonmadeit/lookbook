@@ -1,24 +1,19 @@
-// Creates a Stripe Checkout Session for the cart.
+// Creates a Stripe Embedded Checkout session for the cart.
 //
-// Security model: the browser sends only product ids, variant ids, and
-// quantities. Titles, prices, and currency are looked up server-side from the
-// products table, so a tampered client can never change what gets charged.
-// Stock is validated here and decremented by the stripe-webhook function only
-// after payment actually succeeds.
+// Embedded (rather than hosted) mode keeps the shopper on knotsss.com: Stripe
+// renders the payment form inside our own page, so there is no redirect out to
+// stripe.com and back.
+//
+// Security model: the browser sends only product ids, variant ids, quantities
+// and a destination country. Titles, prices, weights and the shipping charge
+// are all computed server-side, so a tampered client can never change what it
+// gets charged. Stock is validated here and only decremented by the
+// stripe-webhook function once payment actually succeeds.
 
 import Stripe from "npm:stripe@17";
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-interface CartLine {
-  product_id: string;
-  variant_id: string;
-  quantity: number;
-}
+import { corsHeaders, json, loadShippingConfig, priceCart, type CartLine } from "../_shared/cart.ts";
+import { quoteShipping, totalWeightGrams } from "../_shared/shipping.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -27,7 +22,8 @@ Deno.serve(async (req) => {
 
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeKey) {
+    const publishableKey = Deno.env.get("STRIPE_PUBLISHABLE_KEY");
+    if (!stripeKey || !publishableKey) {
       return json({ error: "Payments are not configured yet." }, 503);
     }
     const stripe = new Stripe(stripeKey, {
@@ -40,96 +36,75 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { items, success_url, cancel_url } = (await req.json()) as {
+    const { items, country, return_url } = (await req.json()) as {
       items: CartLine[];
-      success_url: string;
-      cancel_url: string;
+      country: string;
+      return_url: string;
     };
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return json({ error: "Cart is empty." }, 400);
-    }
-    // Only allow redirecting back to our own site.
-    const origin = new URL(req.headers.get("origin") ?? success_url).origin;
-    for (const u of [success_url, cancel_url]) {
-      if (!u || new URL(u).origin !== origin) {
-        return json({ error: "Invalid redirect URL." }, 400);
-      }
+    // Only ever return the shopper to our own site.
+    const origin = req.headers.get("origin");
+    if (!return_url || !origin || new URL(return_url).origin !== origin) {
+      return json({ error: "Invalid return URL." }, 400);
     }
 
-    // Server-side price + stock lookup.
-    const ids = [...new Set(items.map((i) => i.product_id))];
-    const { data: products, error } = await supabase
-      .from("products")
-      .select("id,title,price,currency,variants,images")
-      .in("id", ids);
-    if (error) throw error;
+    const destination = String(country || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(destination)) {
+      return json({ error: "Choose a delivery country first." }, 400);
+    }
 
-    const { data: settings } = await supabase
-      .from("store_settings")
-      .select("shipping_flat_rate,free_shipping_threshold")
-      .eq("id", 1)
-      .maybeSingle();
-    const flatRate = Number(settings?.shipping_flat_rate ?? 0);
-    const freeThreshold = settings?.free_shipping_threshold;
+    const priced = await priceCart(supabase, items);
+    if (!priced.ok) return json({ error: priced.error }, priced.status);
 
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
-    const orderItems: Record<string, unknown>[] = [];
-    let subtotal = 0;
-    let currency = "usd";
+    const config = await loadShippingConfig(supabase);
+    const weightGrams = totalWeightGrams(priced.lines, config.defaultItemWeight);
+    const quote = quoteShipping({
+      country: destination,
+      weightGrams,
+      subtotal: priced.subtotal,
+      rates: config.rates,
+      handlingFee: config.handlingFee,
+      freeThreshold: config.freeThreshold,
+      flatRateFallback: config.flatRateFallback,
+    });
 
-    for (const line of items) {
-      const qty = Math.max(1, Math.min(99, Math.floor(line.quantity || 1)));
-      const product = products?.find((p) => p.id === line.product_id);
-      if (!product) return json({ error: "A product in your bag no longer exists." }, 409);
+    const currency = priced.currency;
+    const total = Math.round((priced.subtotal + quote.cost) * 100) / 100;
 
-      const variants = (product.variants as Array<Record<string, unknown>>) || [];
-      const variant = variants.find((v) => v.id === line.variant_id);
-      if (!variant || variant.available === false) {
-        return json({ error: `"${product.title}" is no longer available.` }, 409);
-      }
-      const stock = variant.stock as number | null | undefined;
-      if (stock !== null && stock !== undefined && stock < qty) {
-        return json({ error: `Not enough stock left for "${product.title}".` }, 409);
-      }
-
-      const unitPrice = Number(variant.price ?? product.price) || 0;
-      currency = String(product.currency || "USD").toLowerCase();
-      subtotal += unitPrice * qty;
-
-      const variantTitle = String(variant.title ?? "");
-      const displayName =
-        variantTitle && variantTitle !== "Default Title"
-          ? `${product.title} — ${variantTitle}`
-          : product.title;
-      const image = (product.images as Array<{ url?: string }>)?.[0]?.url;
-
-      lineItems.push({
-        quantity: qty,
-        price_data: {
-          currency,
-          unit_amount: Math.round(unitPrice * 100),
-          product_data: { name: displayName, ...(image ? { images: [image] } : {}) },
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = priced.lines.map((l) => ({
+      quantity: l.quantity,
+      price_data: {
+        currency,
+        unit_amount: Math.round(l.unitPrice * 100),
+        product_data: {
+          name:
+            l.variantTitle && l.variantTitle !== "Default Title"
+              ? `${l.title} — ${l.variantTitle}`
+              : l.title,
+          ...(l.image ? { images: [l.image] } : {}),
         },
-      });
-      orderItems.push({
-        product_id: product.id,
-        variant_id: line.variant_id,
-        title: product.title,
-        variantTitle,
-        selectedOptions: variant.selectedOptions ?? [],
-        price: String(unitPrice),
-        quantity: qty,
-        image: image ?? null,
-      });
-    }
+      },
+    }));
 
-    // Record the order first (pending), then hand off to Stripe.
+    // Record the order as pending first, so a payment can always be traced
+    // back to an order even if the browser dies mid-flow.
     const { data: order, error: orderErr } = await supabase
       .from("orders")
       .insert({
-        items: orderItems,
-        subtotal,
+        items: priced.lines.map((l) => ({
+          product_id: l.product_id,
+          variant_id: l.variant_id,
+          title: l.title,
+          variantTitle: l.variantTitle,
+          selectedOptions: l.selectedOptions,
+          price: String(l.unitPrice),
+          quantity: l.quantity,
+          image: l.image,
+        })),
+        subtotal: priced.subtotal,
+        shipping_cost: quote.cost,
+        shipping_country: destination,
+        total,
         currency: currency.toUpperCase(),
         customer_name: "(pending payment)",
         customer_email: "(pending payment)",
@@ -140,32 +115,21 @@ Deno.serve(async (req) => {
       .single();
     if (orderErr) throw orderErr;
 
-    // Free shipping once the subtotal clears the threshold; otherwise the flat rate.
-    const shippingCost =
-      freeThreshold !== null && freeThreshold !== undefined && subtotal >= Number(freeThreshold)
-        ? 0
-        : flatRate;
-    const shippingLabel = shippingCost === 0 ? "Free shipping" : "Shipping";
-
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      ui_mode: "embedded",
       line_items: lineItems,
-      success_url: `${success_url}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url,
-      metadata: { order_id: order.id },
-      shipping_address_collection: {
-        allowed_countries: [
-          "US", "CA", "GB", "AU", "NZ", "IE", "DE", "FR", "NL", "BE", "ES", "IT",
-          "PT", "AT", "CH", "SE", "NO", "DK", "FI", "PL", "CZ", "JP", "KR", "SG",
-          "HK", "AE", "MX", "BR",
-        ],
-      },
+      return_url: `${return_url}?session_id={CHECKOUT_SESSION_ID}`,
+      metadata: { order_id: order.id, shipping_zone: quote.zone },
+      // Locked to the country the shopper already picked, so the shipping we
+      // quoted can't be invalidated by changing the address inside Stripe.
+      shipping_address_collection: { allowed_countries: [destination as never] },
       shipping_options: [
         {
           shipping_rate_data: {
             type: "fixed_amount",
-            fixed_amount: { amount: Math.round(shippingCost * 100), currency },
-            display_name: shippingLabel,
+            fixed_amount: { amount: Math.round(quote.cost * 100), currency },
+            display_name: quote.free ? "Free shipping" : quote.label,
           },
         },
       ],
@@ -174,16 +138,20 @@ Deno.serve(async (req) => {
 
     await supabase.from("orders").update({ payment_id: session.id }).eq("id", order.id);
 
-    return json({ url: session.url }, 200);
+    return json(
+      {
+        client_secret: session.client_secret,
+        publishable_key: publishableKey,
+        order_id: order.id,
+        subtotal: priced.subtotal,
+        shipping: quote.cost,
+        total,
+        currency: currency.toUpperCase(),
+      },
+      200,
+    );
   } catch (err) {
     console.error(err);
     return json({ error: "Could not start checkout." }, 500);
   }
 });
-
-function json(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
