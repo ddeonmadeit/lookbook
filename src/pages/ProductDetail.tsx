@@ -229,27 +229,12 @@ const ProductDetail = () => {
       return;
     }
 
-    // Vertical swipe on image — always navigate products
+    // Vertical swipe on the image always moves between products: up for the
+    // next one, down for the previous. Details and the mystery carousel are
+    // opened from the buttons in the bottom bar instead.
     if (absDeltaY > 60 && absDeltaY > absDeltaX) {
       imageSwipeHandled.current = true;
-      if (deltaY > 0) {
-        // Swipe up on image → next product (or reveal details if not yet open)
-        if (!panelsOpen) {
-          if (product?.handle === MYSTERY_HANDLE) {
-            setShowDetails(true);
-            setShowMystery(true);
-            setOpenAccordion(null);
-          } else {
-            setShowDetails(true);
-            setOpenAccordion(null);
-          }
-        } else {
-          goToProduct(currentProductIndex + 1);
-        }
-      } else {
-        // Swipe down on image → prev product
-        goToProduct(currentProductIndex - 1);
-      }
+      goToProduct(currentProductIndex + (deltaY > 0 ? 1 : -1));
     }
   };
 
