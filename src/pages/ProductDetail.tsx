@@ -7,6 +7,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { Navbar } from "@/components/Navbar";
 import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
 import loadingSpinner from "@/assets/loading-spinner.gif";
+import RestockReminder from "@/components/RestockReminder";
 
 const MYSTERY_HANDLE = "untitled-oct1_21-14";
 
@@ -558,11 +559,20 @@ const ProductDetail = () => {
                     return (
                       <>
                         {allVariantsSoldOut ? (
-                          <div className="flex items-center justify-center py-3">
-                            <p className="font-display text-[18px] font-semibold text-accent uppercase tracking-[0.15em]">
-                              SOLD OUT
-                            </p>
-                          </div>
+                          <>
+                            <div className="flex items-center justify-center py-3">
+                              <p className="font-display text-[18px] font-semibold text-accent uppercase tracking-[0.15em]">
+                                SOLD OUT
+                              </p>
+                            </div>
+                            <div className="border-t border-border pt-3">
+                              <RestockReminder
+                                productId={product.id}
+                                handle={product.handle}
+                                title={product.title}
+                              />
+                            </div>
+                          </>
                         ) : (
                           <>
                             {displayOptions.map((option) => (

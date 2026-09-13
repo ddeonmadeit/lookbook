@@ -98,6 +98,36 @@ export type Database = {
         }
         Relationships: []
       }
+      restock_reminders: {
+        Row: {
+          id: string
+          product_id: string | null
+          product_handle: string
+          product_title: string
+          phone: string
+          notified_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id?: string | null
+          product_handle: string
+          product_title: string
+          phone: string
+          notified_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string | null
+          product_handle?: string
+          product_title?: string
+          phone?: string
+          notified_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       shipping_rates: {
         Row: {
           id: string

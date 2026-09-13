@@ -142,6 +142,7 @@ const AdminDashboard = () => {
               <TabsTrigger value="products">Products</TabsTrigger>
               <TabsTrigger value="orders">Orders</TabsTrigger>
               <TabsTrigger value="signups">Early Access</TabsTrigger>
+              <TabsTrigger value="reminders">Reminders</TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
           </div>
@@ -157,6 +158,9 @@ const AdminDashboard = () => {
           </TabsContent>
           <TabsContent value="signups">
             <SignupsTab />
+          </TabsContent>
+          <TabsContent value="reminders">
+            <RemindersTab />
           </TabsContent>
           <TabsContent value="settings">
             <SettingsTab />
@@ -850,6 +854,151 @@ const SignupsTab = () => {
   );
 };
 
+/* -------------------------------------------------------------------------- */
+/* Restock reminders ("remind me" captures from sold-out product pages)        */
+/* -------------------------------------------------------------------------- */
+interface ReminderRow {
+  id: string;
+  product_handle: string;
+  product_title: string;
+  phone: string;
+  notified_at: string | null;
+  created_at: string;
+}
+
+const RemindersTab = () => {
+  const [rows, setRows] = useState<ReminderRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("restock_reminders")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) toast.error("Failed to load reminders", { description: error.message });
+    setRows((data as unknown as ReminderRow[]) || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Grouped by product so it's obvious what to restock first.
+  const byProduct = rows.reduce<Record<string, { title: string; rows: ReminderRow[] }>>((acc, r) => {
+    const key = r.product_handle;
+    if (!acc[key]) acc[key] = { title: r.product_title, rows: [] };
+    acc[key].rows.push(r);
+    return acc;
+  }, {});
+  const groups = Object.entries(byProduct).sort((a, b) => b[1].rows.length - a[1].rows.length);
+
+  const markNotified = async (handle: string) => {
+    const ids = byProduct[handle].rows.filter((r) => !r.notified_at).map((r) => r.id);
+    if (ids.length === 0) return;
+    const stamp = new Date().toISOString();
+    setRows((rs) => rs.map((r) => (ids.includes(r.id) ? { ...r, notified_at: stamp } : r)));
+    const { error } = await supabase
+      .from("restock_reminders")
+      .update({ notified_at: stamp })
+      .in("id", ids);
+    if (error) {
+      toast.error("Could not update", { description: error.message });
+      load();
+      return;
+    }
+    toast.success(`Marked ${ids.length} as notified`);
+  };
+
+  const handleExport = () => {
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const body = rows.map((r) =>
+      [r.product_title, r.product_handle, r.phone, r.created_at, r.notified_at ?? ""].map(esc).join(","),
+    );
+    const blob = new Blob([["product,handle,phone,requested_at,notified_at", ...body].join("\n")], {
+      type: "text/csv",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `knots-restock-reminders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const waiting = rows.filter((r) => !r.notified_at).length;
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 gap-2">
+        <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
+          {rows.length} request{rows.length !== 1 ? "s" : ""}
+          {waiting > 0 ? ` · ${waiting} still waiting` : ""}
+        </p>
+        <Button size="sm" variant="outline" onClick={handleExport} disabled={rows.length === 0}>
+          <Download className="w-4 h-4 sm:mr-1" />
+          <span className="hidden sm:inline">Export CSV</span>
+        </Button>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="font-body text-[12px] text-muted-foreground py-12 text-center">
+          No restock requests yet. They appear here when someone leaves their number
+          on a sold-out product.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {groups.map(([handle, group]) => {
+            const pending = group.rows.filter((r) => !r.notified_at).length;
+            return (
+              <div key={handle} className="border border-border rounded-md p-4">
+                <div className="flex justify-between items-start gap-2 mb-3">
+                  <div className="min-w-0">
+                    <p className="font-body text-[12px] font-medium truncate">{group.title}</p>
+                    <p className="font-body text-[10px] text-muted-foreground">
+                      {group.rows.length} waiting{pending !== group.rows.length ? ` · ${group.rows.length - pending} notified` : ""}
+                    </p>
+                  </div>
+                  {pending > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-[11px] flex-shrink-0"
+                      onClick={() => markNotified(handle)}
+                    >
+                      Mark notified
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.rows.map((r) => (
+                    <span
+                      key={r.id}
+                      className={`font-body text-[11px] border border-border rounded px-2 py-1 ${
+                        r.notified_at ? "text-muted-foreground line-through" : ""
+                      }`}
+                      title={new Date(r.created_at).toLocaleString()}
+                    >
+                      {r.phone}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 /* -------------------------------------------------------------------------- */
 /* Shipping rate card                                                          */
 /* -------------------------------------------------------------------------- */
