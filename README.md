@@ -57,7 +57,9 @@ products** (backed by Supabase), with Shopify available as an optional source yo
 can switch on later. It ships in manual mode by default.
 
 See **[DASHBOARD.md](./DASHBOARD.md)** for setup (database migration, creating
-your admin account) and usage.
+your admin account) and usage, and **[EMAIL.md](./EMAIL.md)** for the order
+confirmation emails and texts — including the DNS records needed to keep them
+out of spam.
 
 ## What technologies are used for this project?
 

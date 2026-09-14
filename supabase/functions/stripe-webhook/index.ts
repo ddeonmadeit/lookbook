@@ -4,6 +4,29 @@
 
 import Stripe from "npm:stripe@17";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { sendOrderNotification, type OrderForNotify } from "../_shared/notify.ts";
+
+/**
+ * Which service the customer actually picked inside Stripe. The rate objects
+ * are created inline by create-checkout with `metadata.service`, so read that
+ * back; if the lookup fails, infer from the display name rather than losing it.
+ */
+async function chosenService(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+): Promise<string | null> {
+  const rate = session.shipping_cost?.shipping_rate;
+  if (!rate) return null;
+  try {
+    const full = typeof rate === "string" ? await stripe.shippingRates.retrieve(rate) : rate;
+    const fromMeta = full.metadata?.service;
+    if (fromMeta) return fromMeta;
+    return /express/i.test(full.display_name ?? "") ? "express" : "standard";
+  } catch (err) {
+    console.error("could not read shipping rate:", err);
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -46,7 +69,7 @@ Deno.serve(async (req) => {
 
     const { data: order } = await supabase
       .from("orders")
-      .select("id,items,status")
+      .select("id,items,status,currency")
       .eq("id", orderId)
       .single();
     if (!order) return new Response("order not found", { status: 200 });
@@ -72,22 +95,31 @@ Deno.serve(async (req) => {
     // amounts we quoted when the session was created.
     const shippingCharged = (session.total_details?.amount_shipping ?? 0) / 100;
     const totalCharged = (session.amount_total ?? 0) / 100;
+    const service = await chosenService(stripe, session);
 
-    await supabase
-      .from("orders")
-      .update({
-        status: "paid",
-        paid_at: new Date().toISOString(),
-        payment_id: String(session.payment_intent ?? session.id),
-        customer_name: session.customer_details?.name ?? shipping?.name ?? "Stripe customer",
-        customer_email: session.customer_details?.email ?? "(not provided)",
-        customer_phone: session.customer_details?.phone ?? null,
-        shipping_address: addressText,
-        shipping_cost: shippingCharged,
-        shipping_country: addr?.country ?? null,
-        total: totalCharged,
-      })
-      .eq("id", orderId);
+    // Everything needed to pick, pack and post the order, kept in its own
+    // columns as well as the printable address block.
+    const details = {
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      payment_id: String(session.payment_intent ?? session.id),
+      customer_name: session.customer_details?.name ?? shipping?.name ?? "Stripe customer",
+      customer_email: session.customer_details?.email ?? "(not provided)",
+      customer_phone: session.customer_details?.phone ?? null,
+      shipping_address: addressText,
+      shipping_line1: addr?.line1 ?? null,
+      shipping_line2: addr?.line2 ?? null,
+      shipping_city: addr?.city ?? null,
+      shipping_state: addr?.state ?? null,
+      shipping_postcode: addr?.postal_code ?? null,
+      shipping_country: addr?.country ?? null,
+      shipping_service: service,
+      shipping_cost: shippingCharged,
+      subtotal: (session.amount_subtotal ?? 0) / 100,
+      total: totalCharged,
+    };
+
+    await supabase.from("orders").update(details).eq("id", orderId);
 
     // Decrement stock now that payment is confirmed.
     for (const it of (order.items as Array<Record<string, unknown>>) || []) {
@@ -99,6 +131,38 @@ Deno.serve(async (req) => {
         });
         if (error) console.error("stock decrement failed:", error.message);
       }
+    }
+
+    // Confirmation to the customer. Never allowed to fail the webhook: Stripe
+    // would retry and we'd decrement stock twice for a mail server hiccup.
+    try {
+      const notify: OrderForNotify = {
+        id: orderId,
+        currency: (order.currency as string) ?? "AUD",
+        customer_name: details.customer_name,
+        customer_email: details.customer_email,
+        customer_phone: details.customer_phone,
+        items: order.items as Array<Record<string, unknown>>,
+        subtotal: details.subtotal,
+        shipping_cost: details.shipping_cost,
+        total: details.total,
+        shipping_service: details.shipping_service,
+        shipping_address: details.shipping_address,
+      };
+      const sent = await sendOrderNotification(supabase, "order_confirmation", notify, {
+        email: true,
+        sms: true,
+      });
+      await supabase
+        .from("orders")
+        .update({
+          confirmation_sent_at:
+            sent.email === "sent" || sent.sms === "sent" ? new Date().toISOString() : null,
+        })
+        .eq("id", orderId);
+      if (sent.reason) console.log("confirmation:", JSON.stringify(sent));
+    } catch (err) {
+      console.error("confirmation send failed:", err);
     }
   }
 

@@ -123,7 +123,7 @@ export async function loadShippingConfig(supabase: DbClient) {
       )
       .eq("id", 1)
       .maybeSingle(),
-    supabase.from("shipping_rates").select("zone,max_weight_grams,price"),
+    supabase.from("shipping_rates").select("zone,max_weight_grams,price,service"),
   ]);
 
   return {
@@ -134,7 +134,9 @@ export async function loadShippingConfig(supabase: DbClient) {
       settings?.free_shipping_threshold === null || settings?.free_shipping_threshold === undefined
         ? null
         : Number(settings.free_shipping_threshold),
-    rates: (rates ?? []) as Array<{ zone: string; max_weight_grams: number; price: number }>,
+    rates: (rates ?? []) as Array<
+      { zone: string; max_weight_grams: number; price: number; service?: string }
+    >,
   };
 }
 

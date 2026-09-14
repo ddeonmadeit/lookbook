@@ -13,7 +13,7 @@
 import Stripe from "npm:stripe@17";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, json, loadShippingConfig, priceCart, type CartLine } from "../_shared/cart.ts";
-import { quoteShipping, totalWeightGrams } from "../_shared/shipping.ts";
+import { quoteAllServices, totalWeightGrams } from "../_shared/shipping.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -36,9 +36,10 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { items, country, return_url } = (await req.json()) as {
+    const { items, country, postcode, return_url } = (await req.json()) as {
       items: CartLine[];
       country: string;
+      postcode?: string;
       return_url: string;
     };
 
@@ -58,8 +59,11 @@ Deno.serve(async (req) => {
 
     const config = await loadShippingConfig(supabase);
     const weightGrams = totalWeightGrams(priced.lines, config.defaultItemWeight);
-    const quote = quoteShipping({
+    // Both service levels are offered inside Stripe so the customer picks the
+    // one they want at the moment they pay; the webhook records which.
+    const options = quoteAllServices({
       country: destination,
+      postcode,
       weightGrams,
       subtotal: priced.subtotal,
       rates: config.rates,
@@ -67,9 +71,10 @@ Deno.serve(async (req) => {
       freeThreshold: config.freeThreshold,
       flatRateFallback: config.flatRateFallback,
     });
+    const cheapest = options[0];
 
     const currency = priced.currency;
-    const total = Math.round((priced.subtotal + quote.cost) * 100) / 100;
+    const total = Math.round((priced.subtotal + cheapest.cost) * 100) / 100;
 
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = priced.lines.map((l) => ({
       quantity: l.quantity,
@@ -102,8 +107,9 @@ Deno.serve(async (req) => {
           image: l.image,
         })),
         subtotal: priced.subtotal,
-        shipping_cost: quote.cost,
+        shipping_cost: cheapest.cost,
         shipping_country: destination,
+        shipping_postcode: postcode ?? null,
         total,
         currency: currency.toUpperCase(),
         customer_name: "(pending payment)",
@@ -120,7 +126,7 @@ Deno.serve(async (req) => {
       ui_mode: "embedded",
       line_items: lineItems,
       return_url: `${return_url}?session_id={CHECKOUT_SESSION_ID}`,
-      metadata: { order_id: order.id, shipping_zone: quote.zone },
+      metadata: { order_id: order.id, shipping_zone: cheapest.zone },
       // Locked to the country the shopper already picked, so the shipping we
       // quoted can't be invalidated by changing the address inside Stripe.
       // (Stripe types this as a union of literal country codes; ours is only
@@ -130,15 +136,14 @@ Deno.serve(async (req) => {
           destination as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry,
         ],
       },
-      shipping_options: [
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: { amount: Math.round(quote.cost * 100), currency },
-            display_name: quote.free ? "Free shipping" : quote.label,
-          },
+      shipping_options: options.map((o) => ({
+        shipping_rate_data: {
+          type: "fixed_amount" as const,
+          fixed_amount: { amount: Math.round(o.cost * 100), currency },
+          display_name: o.free ? "Free standard shipping" : `${o.label} (${o.eta})`,
+          metadata: { service: o.service },
         },
-      ],
+      })),
       phone_number_collection: { enabled: true },
     });
 
@@ -150,9 +155,10 @@ Deno.serve(async (req) => {
         publishable_key: publishableKey,
         order_id: order.id,
         subtotal: priced.subtotal,
-        shipping: quote.cost,
+        shipping: cheapest.cost,
         total,
         currency: currency.toUpperCase(),
+        options: options.map((o) => ({ service: o.service, cost: o.cost, label: o.label, eta: o.eta })),
       },
       200,
     );

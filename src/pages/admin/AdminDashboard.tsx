@@ -68,6 +68,8 @@ import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/se
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
 import OverviewTab from "./OverviewTab";
+import CustomersTab from "./CustomersTab";
+import EmailTemplatesTab from "./EmailTemplatesTab";
 import { useAdminThemeStore } from "@/stores/adminThemeStore";
 
 interface OrderRow {
@@ -82,6 +84,11 @@ interface OrderRow {
   customer_phone: string | null;
   shipping_address: string | null;
   shipping_country: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_postcode: string | null;
+  shipping_service: string | null;
+  confirmation_sent_at: string | null;
   notes: string | null;
   status: string;
   payment_provider: string;
@@ -141,6 +148,7 @@ const AdminDashboard = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="products">Products</TabsTrigger>
               <TabsTrigger value="orders">Orders</TabsTrigger>
+              <TabsTrigger value="customers">Customers</TabsTrigger>
               <TabsTrigger value="signups">Early Access</TabsTrigger>
               <TabsTrigger value="reminders">Reminders</TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -155,6 +163,9 @@ const AdminDashboard = () => {
           </TabsContent>
           <TabsContent value="orders">
             <OrdersTab />
+          </TabsContent>
+          <TabsContent value="customers">
+            <CustomersTab />
           </TabsContent>
           <TabsContent value="signups">
             <SignupsTab />
@@ -482,17 +493,78 @@ const OrdersTab = () => {
 
   const setStatus = (id: string, status: string) => patch(id, { status });
 
+  /**
+   * Marks the order fulfilled and tells the customer. Tracking is optional —
+   * plenty of parcels go out before a number exists — so the button works
+   * either way. The edge function owns this rather than a direct update
+   * because it also sends the "shipped" email/SMS.
+   */
+  const fulfil = async (
+    o: OrderRow,
+    number: string,
+    carrier: string,
+    channels: { email: boolean; sms: boolean },
+  ) => {
+    const trimmed = number.trim();
+    setBusyId(o.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("fulfil-order", {
+        body: {
+          order_id: o.id,
+          tracking_number: trimmed || null,
+          tracking_carrier: trimmed ? carrier : null,
+          notify_email: channels.email,
+          notify_sms: channels.sms,
+        },
+      });
+      const result = data as
+        | { ok?: boolean; error?: string; notification?: { email: string; sms: string; reason?: string } }
+        | null;
+      if (error || !result?.ok) {
+        toast.error("Could not mark as fulfilled", {
+          description: result?.error || error?.message || "Please try again.",
+        });
+        return;
+      }
+
+      setOrders((os) =>
+        os.map((x) =>
+          x.id === o.id
+            ? {
+                ...x,
+                status: "fulfilled",
+                tracking_number: trimmed || null,
+                tracking_carrier: trimmed ? carrier : null,
+                shipped_at: new Date().toISOString(),
+              }
+            : x,
+        ),
+      );
+
+      const n = result.notification;
+      const sent = [n?.email === "sent" && "email", n?.sms === "sent" && "SMS"].filter(Boolean);
+      toast.success("Marked as fulfilled", {
+        description: sent.length
+          ? `Customer notified by ${sent.join(" and ")}.`
+          : n?.reason
+            ? `Customer not notified — ${n.reason}`
+            : undefined,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** Tracking only, without re-sending a shipped notification. */
   const saveTracking = async (o: OrderRow, number: string, carrier: string) => {
     const trimmed = number.trim();
     setBusyId(o.id);
     const ok = await patch(o.id, {
       tracking_number: trimmed || null,
       tracking_carrier: trimmed ? carrier : null,
-      shipped_at: trimmed ? new Date().toISOString() : null,
-      ...(trimmed && o.status === "paid" ? { status: "fulfilled" } : {}),
     });
     setBusyId(null);
-    if (ok) toast.success(trimmed ? "Tracking saved — order marked fulfilled" : "Tracking cleared");
+    if (ok) toast.success(trimmed ? "Tracking saved" : "Tracking cleared");
   };
 
   const refund = async (o: OrderRow) => {
@@ -635,6 +707,7 @@ const OrdersTab = () => {
           busy={busyId === o.id}
           onStatus={setStatus}
           onSaveTracking={saveTracking}
+          onFulfil={fulfil}
           onRefund={refund}
         />
       ))}
@@ -647,16 +720,25 @@ const OrderCard = ({
   busy,
   onStatus,
   onSaveTracking,
+  onFulfil,
   onRefund,
 }: {
   order: OrderRow;
   busy: boolean;
   onStatus: (id: string, status: string) => void;
   onSaveTracking: (o: OrderRow, number: string, carrier: string) => void;
+  onFulfil: (
+    o: OrderRow,
+    number: string,
+    carrier: string,
+    channels: { email: boolean; sms: boolean },
+  ) => void;
   onRefund: (o: OrderRow) => void;
 }) => {
   const [tracking, setTracking] = useState(o.tracking_number ?? "");
   const [carrier, setCarrier] = useState(o.tracking_carrier ?? CARRIERS[0]);
+  const [notifyEmail, setNotifyEmail] = useState(true);
+  const [notifySms, setNotifySms] = useState(false);
 
   const paid = Number(o.total) || Number(o.subtotal) || 0;
   const refunded = Number(o.refunded_amount) || 0;
@@ -719,50 +801,95 @@ const OrderCard = ({
           {o.shipping_address}
         </p>
       )}
+      <p className="font-body text-[10px] text-muted-foreground mt-1.5">
+        {o.shipping_service === "express" ? "Express" : "Standard"} shipping
+        {o.confirmation_sent_at
+          ? ` · confirmation sent ${new Date(o.confirmation_sent_at).toLocaleDateString()}`
+          : ""}
+      </p>
       {o.notes && (
         <p className="font-body text-[11px] text-muted-foreground mt-2 italic">“{o.notes}”</p>
       )}
 
-      {/* Fulfilment: saving a tracking number marks a paid order fulfilled. */}
-      <div className="mt-3 border-t border-border pt-3 flex flex-wrap items-center gap-2">
-        <Select value={carrier} onValueChange={setCarrier}>
-          <SelectTrigger className="h-8 w-[140px] text-[11px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CARRIERS.map((c) => (
-              <SelectItem key={c} value={c} className="text-[12px]">{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          value={tracking}
-          onChange={(e) => setTracking(e.target.value)}
-          placeholder="Tracking number"
-          className="h-8 flex-1 min-w-[140px] text-[12px]"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 text-[11px]"
-          disabled={busy || !dirty}
-          onClick={() => onSaveTracking(o, tracking, carrier)}
-        >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5 sm:mr-1" />}
-          <span className="hidden sm:inline">Save</span>
-        </Button>
-        {refundable && (
+      {/* Fulfilment. Tracking is optional — the order can be marked fulfilled
+          before a number exists, and the number added later. */}
+      <div className="mt-3 border-t border-border pt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={carrier} onValueChange={setCarrier}>
+            <SelectTrigger className="h-8 w-[140px] text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CARRIERS.map((c) => (
+                <SelectItem key={c} value={c} className="text-[12px]">{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={tracking}
+            onChange={(e) => setTracking(e.target.value)}
+            placeholder="Tracking number (optional)"
+            className="h-8 flex-1 min-w-[140px] text-[12px]"
+          />
+          {dirty && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-[11px] text-muted-foreground"
+              disabled={busy}
+              onClick={() => onSaveTracking(o, tracking, carrier)}
+            >
+              Save only
+            </Button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             size="sm"
-            variant="ghost"
-            className="h-8 text-[11px] text-muted-foreground"
-            disabled={busy}
-            onClick={() => onRefund(o)}
+            className="h-8 text-[11px]"
+            disabled={busy || o.status === "cancelled" || o.status === "refunded"}
+            onClick={() => onFulfil(o, tracking, carrier, { email: notifyEmail, sms: notifySms })}
           >
-            <RotateCcw className="w-3.5 h-3.5 sm:mr-1" />
-            <span className="hidden sm:inline">Refund</span>
+            {busy ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Truck className="w-3.5 h-3.5 mr-1.5" />
+            )}
+            {o.status === "fulfilled" ? "Resend & update" : "Mark as fulfilled"}
           </Button>
-        )}
+          <label className="flex items-center gap-1.5 font-body text-[11px] text-muted-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              checked={notifyEmail}
+              onChange={(e) => setNotifyEmail(e.target.checked)}
+              className="accent-current"
+            />
+            Email
+          </label>
+          <label className="flex items-center gap-1.5 font-body text-[11px] text-muted-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              checked={notifySms}
+              onChange={(e) => setNotifySms(e.target.checked)}
+              disabled={!o.customer_phone}
+              className="accent-current"
+            />
+            Text{!o.customer_phone ? " (no number)" : ""}
+          </label>
+          {refundable && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-[11px] text-muted-foreground ml-auto"
+              disabled={busy}
+              onClick={() => onRefund(o)}
+            >
+              <RotateCcw className="w-3.5 h-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Refund</span>
+            </Button>
+          )}
+        </div>
       </div>
       {o.shipped_at && (
         <p className="font-body text-[10px] text-muted-foreground mt-1.5">
@@ -1337,6 +1464,12 @@ const SettingsTab = () => {
       </div>
 
       <ShippingRatesEditor />
+
+      {/* Breaks the settings column: the HTML editor and its preview need the
+          full width to be usable. */}
+      <div className="border-t border-border pt-5 w-[calc(100vw-2rem)] sm:w-auto sm:max-w-none lg:w-[64rem]">
+        <EmailTemplatesTab />
+      </div>
 
       <div className="space-y-4 border-t border-border pt-5">
         <p className={label}>Shopify connection</p>

@@ -22,14 +22,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { COUNTRIES } from "@/lib/countries";
 
 const COUNTRY_KEY = "knots-ship-country";
+const POSTCODE_KEY = "knots-ship-postcode";
+
+interface ShippingOption {
+  service: "standard" | "express";
+  cost: number;
+  total: number;
+  label: string;
+  eta: string;
+  free: boolean;
+}
 
 interface Quote {
   currency: string;
   subtotal: number;
-  shipping: number;
-  total: number;
-  label: string;
-  free: boolean;
+  zone: string;
+  zone_label: string;
+  options: ShippingOption[];
 }
 
 /** $170 stays "$170"; $18.45 shows its cents. */
@@ -66,6 +75,10 @@ const Checkout = () => {
   const [country, setCountry] = useState<string>(
     () => localStorage.getItem(COUNTRY_KEY) || "AU",
   );
+  const [postcode, setPostcode] = useState<string>(
+    () => localStorage.getItem(POSTCODE_KEY) || "",
+  );
+  const [service, setService] = useState<"standard" | "express">("standard");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -99,22 +112,40 @@ const Checkout = () => {
     localStorage.setItem(COUNTRY_KEY, country);
   }, [country]);
 
+  useEffect(() => {
+    localStorage.setItem(POSTCODE_KEY, postcode);
+  }, [postcode]);
+
+  // Australia Post prices domestic parcels on the origin→destination postcode
+  // pair, so a postcode is what actually decides the price; overseas it's the
+  // country alone.
+  const needsPostcode = country === "AU";
+  const postcodeReady = !needsPostcode || /^\d{4}$/.test(postcode.trim());
+
+  const selected =
+    quote?.options.find((o) => o.service === service) ?? quote?.options[0] ?? null;
+
   // Live shipping quote whenever the destination or the bag changes. Stale
   // responses are discarded so a slow earlier request can't overwrite a newer
   // one with the wrong country's price.
   const quoteSeq = useRef(0);
   useEffect(() => {
     if (!paymentsEnabled || items.length === 0) return;
+    if (!postcodeReady) {
+      setQuote(null);
+      return;
+    }
     const seq = ++quoteSeq.current;
     setQuoting(true);
-    (async () => {
+    // Small debounce so typing a postcode doesn't fire four quotes.
+    const timer = window.setTimeout(async () => {
       try {
         const { data, error } = await supabase.functions.invoke("shipping-quote", {
-          body: { items: cartLines(), country },
+          body: { items: cartLines(), country, postcode: postcode.trim() },
         });
         if (seq !== quoteSeq.current) return;
         const result = data as (Quote & { error?: string }) | null;
-        if (error || !result || result.error) {
+        if (error || !result?.options?.length || result.error) {
           setQuote(null);
         } else {
           setQuote(result);
@@ -124,13 +155,14 @@ const Checkout = () => {
       } finally {
         if (seq === quoteSeq.current) setQuoting(false);
       }
-    })();
-  }, [country, cartKey, paymentsEnabled, items.length, cartLines]);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [country, postcode, postcodeReady, cartKey, paymentsEnabled, items.length, cartLines]);
 
   // Changing the destination invalidates any payment session already opened.
   useEffect(() => {
     setClientSecret(null);
-  }, [country, cartKey]);
+  }, [country, postcode, cartKey]);
 
   const startPayment = async () => {
     setStarting(true);
@@ -139,6 +171,7 @@ const Checkout = () => {
         body: {
           items: cartLines(),
           country,
+          postcode: postcode.trim(),
           return_url: `${window.location.origin}/checkout/success`,
         },
       });
@@ -304,22 +337,88 @@ const Checkout = () => {
             {/* Destination — drives the shipping price, so it's chosen here
                 rather than being a surprise at the payment step. */}
             {!clientSecret && (
-              <div className="mt-5 space-y-1.5">
-                <Label className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
-                  Deliver to
-                </Label>
-                <Select value={country} onValueChange={setCountry}>
-                  <SelectTrigger className="font-body text-[12px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {COUNTRIES.map((c) => (
-                      <SelectItem key={c.code} value={c.code} className="text-[12px]">
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="mt-5 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                    Deliver to
+                  </Label>
+                  <Select value={country} onValueChange={setCountry}>
+                    <SelectTrigger className="font-body text-[12px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code} className="text-[12px]">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {needsPostcode && (
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="postcode"
+                      className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground"
+                    >
+                      Postcode
+                    </Label>
+                    <Input
+                      id="postcode"
+                      value={postcode}
+                      onChange={(e) => setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      placeholder="2000"
+                      className="font-body text-[12px] tracking-[0.1em]"
+                    />
+                    <p className="font-body text-[10px] text-muted-foreground">
+                      {postcodeReady && quote
+                        ? `Shipping from Sydney to ${quote.zone_label}.`
+                        : "We post from Sydney — your postcode sets the rate."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Service choice. Both are offered again inside the payment
+                    form, so this is a preview of the real options, not a
+                    separate decision that could drift out of sync. */}
+                {quote && quote.options.length > 1 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                      Delivery speed
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {quote.options.map((o) => {
+                        const active = selected?.service === o.service;
+                        return (
+                          <button
+                            key={o.service}
+                            type="button"
+                            onClick={() => setService(o.service)}
+                            aria-pressed={active}
+                            className={`border px-3 py-2.5 text-left transition-colors ${
+                              active
+                                ? "border-foreground"
+                                : "border-border hover:border-muted-foreground"
+                            }`}
+                          >
+                            <span className="block font-body text-[11px] uppercase tracking-[0.1em]">
+                              {o.service === "express" ? "Express" : "Standard"}
+                            </span>
+                            <span className="block font-body text-[10px] text-muted-foreground mt-0.5">
+                              {o.eta}
+                            </span>
+                            <span className="block font-body text-[11px] mt-1">
+                              {o.free ? "Free" : money(o.cost)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -334,8 +433,8 @@ const Checkout = () => {
                 <span className="font-body text-[12px]">
                   {quoting ? (
                     <Loader2 className="w-3 h-3 animate-spin inline" />
-                  ) : quote ? (
-                    quote.free ? "Free" : money(quote.shipping)
+                  ) : selected ? (
+                    selected.free ? "Free" : money(selected.cost)
                   ) : (
                     "—"
                   )}
@@ -344,7 +443,7 @@ const Checkout = () => {
               <div className="flex justify-between items-center pt-2 border-t border-border">
                 <span className={rowLabel}>Total</span>
                 <span className="font-body text-sm font-medium">
-                  {quote ? money(quote.total) : money(subtotal)}
+                  {selected ? money(selected.total) : money(subtotal)}
                 </span>
               </div>
             </div>
@@ -356,7 +455,7 @@ const Checkout = () => {
                   onClick={() => setClientSecret(null)}
                   className="font-body text-[10px] uppercase tracking-[0.15em] text-muted-foreground hover:text-foreground flex items-center gap-1 mb-3"
                 >
-                  <ChevronLeft className="w-3 h-3" /> Change delivery country
+                  <ChevronLeft className="w-3 h-3" /> Change delivery details
                 </button>
                 <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret }}>
                   <EmbeddedCheckout />
@@ -366,14 +465,16 @@ const Checkout = () => {
               <div className="mt-6 space-y-4">
                 <Button
                   onClick={startPayment}
-                  disabled={starting || quoting || !quote}
+                  disabled={starting || quoting || !selected || !postcodeReady}
                   className="w-full h-12 text-[11px] uppercase tracking-[0.2em] font-body"
                 >
                   {starting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : !postcodeReady ? (
+                    "Enter your postcode"
                   ) : (
                     <>
-                      <Lock className="w-3.5 h-3.5 mr-2" /> Pay {quote ? money(quote.total) : ""}
+                      <Lock className="w-3.5 h-3.5 mr-2" /> Pay {selected ? money(selected.total) : ""}
                     </>
                   )}
                 </Button>
