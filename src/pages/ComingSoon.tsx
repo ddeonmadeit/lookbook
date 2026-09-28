@@ -10,8 +10,8 @@ import alteHaasBoldFont from "@/assets/coming-soon/fonts/AlteHaasGroteskBold.ttf
 import alteHaasRegularFont from "@/assets/coming-soon/fonts/AlteHaasGroteskRegular.ttf";
 
 // AW26 drop date — early-access countdown target. Midnight in Sydney (AEDT,
-// UTC+11 on this date), i.e. 2026-10-09T13:00:00Z.
-const TARGET = new Date("2026-10-10T00:00:00+11:00").getTime();
+// UTC+11 on this date), i.e. 2026-10-30T13:00:00Z.
+const TARGET = new Date("2026-10-31T00:00:00+11:00").getTime();
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
