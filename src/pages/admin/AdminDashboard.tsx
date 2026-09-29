@@ -46,6 +46,7 @@ import {
   ArrowUpDown,
   Truck,
   RotateCcw,
+  Import,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -67,6 +68,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/settingsStore";
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
+import ShopifyImportDialog from "./ShopifyImportDialog";
 import OverviewTab from "./OverviewTab";
 import CustomersTab from "./CustomersTab";
 import EmailTemplatesTab from "./EmailTemplatesTab";
@@ -288,6 +290,7 @@ const ProductsTab = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductRow | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = useCallback(async () => {
@@ -389,6 +392,9 @@ const ProductsTab = () => {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button variant="outline" size="sm" className="text-[11px]" onClick={() => setImportOpen(true)}>
+            <Import className="w-3.5 h-3.5 mr-1.5" /> Import from Shopify
+          </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4 mr-1" /> Add product
           </Button>
@@ -401,7 +407,8 @@ const ProductsTab = () => {
         </div>
       ) : products.length === 0 ? (
         <p className="font-body text-[12px] text-muted-foreground py-12 text-center">
-          No products yet. Click “Add product” to create your first one.
+          No products yet. Click “Add product” to create your first one, or “Import from Shopify” to bring over
+          your old catalogue.
         </p>
       ) : (
         <div className="border border-border rounded-md overflow-hidden">
@@ -442,6 +449,8 @@ const ProductsTab = () => {
           <ProductForm product={editing} nextPosition={nextPosition} onSaved={onSaved} onCancel={() => setDialogOpen(false)} />
         </DialogContent>
       </Dialog>
+
+      <ShopifyImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={load} />
     </div>
   );
 };

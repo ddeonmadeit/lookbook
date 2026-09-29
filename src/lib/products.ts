@@ -47,7 +47,8 @@ export interface ProductRow {
 }
 
 // Original storefront ordering for the Shopify source (from knotsss.com/collections/all).
-const SHOPIFY_HANDLE_ORDER = [
+// Also used by the Shopify import to restore the old grid order.
+export const SHOPIFY_HANDLE_ORDER = [
   "untitled-oct1_21-14",
   "sttu-teeshirt",
   "crescent-raw-denim",
