@@ -393,7 +393,7 @@ const ProductsTab = () => {
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="outline" size="sm" className="text-[11px]" onClick={() => setImportOpen(true)}>
-            <Import className="w-3.5 h-3.5 mr-1.5" /> Import from Shopify
+            <Import className="w-3.5 h-3.5 mr-1.5" /> Restore old products
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4 mr-1" /> Add product
@@ -407,8 +407,8 @@ const ProductsTab = () => {
         </div>
       ) : products.length === 0 ? (
         <p className="font-body text-[12px] text-muted-foreground py-12 text-center">
-          No products yet. Click “Add product” to create your first one, or “Import from Shopify” to bring over
-          your old catalogue.
+          No products yet. Click “Add product” to create your first one, or “Restore old products” to bring back
+          your old Shopify catalogue.
         </p>
       ) : (
         <div className="border border-border rounded-md overflow-hidden">

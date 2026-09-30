@@ -5,9 +5,12 @@ import {
   planImport,
   storageFolderFor,
   toImportRow,
+  webSizedImageUrl,
   withPositions,
   type ShopifyImportNode,
 } from "@/lib/shopifyImport";
+import { SHOPIFY_HANDLE_ORDER } from "@/lib/products";
+import recovered from "@/data/recoveredShopifyCatalogue.json";
 
 type VariantSpec = { values: Array<[string, string]>; price: string; available?: boolean };
 
@@ -208,5 +211,106 @@ describe("image storage paths", () => {
     expect(imageExtension(null, "https://cdn.shopify.com/files/a.PNG?v=123")).toBe("png");
     expect(imageExtension("application/octet-stream", "https://cdn.shopify.com/a.jpeg")).toBe("jpg");
     expect(imageExtension(null, "not a url")).toBe("jpg");
+  });
+});
+
+describe("explicit display numbers", () => {
+  it("keeps a product's own number and numbers the rest after everything already in use", () => {
+    const nodes = [
+      { ...node("old-a", { createdAt: "2025-01-01T00:00:00Z" }), displayNumber: 2 },
+      { ...node("old-b", { createdAt: "2025-02-01T00:00:00Z" }), displayNumber: 1 },
+      node("gone-1", { createdAt: "2024-06-01T00:00:00Z" }),
+      node("gone-2", { createdAt: "2024-07-01T00:00:00Z" }),
+    ];
+    const existing = [{ handle: "current", title: "Current", sort_order: 30 }];
+    const numbers = Object.fromEntries(planImport(nodes, existing, ["old-a", "old-b"]).map((c) => [c.row.handle, c.row.sort_order]));
+    expect(numbers).toEqual({ "old-a": 2, "old-b": 1, "gone-1": 31, "gone-2": 32 });
+  });
+
+  it("passes a source caveat through to the preview", () => {
+    const [c] = planImport([{ ...node("x"), archiveNote: "price estimated" }], [], ["x"]);
+    expect(c.note).toBe("price estimated");
+    expect(planImport([node("y")], [], ["y"])[0].note).toBeNull();
+  });
+
+  it("uses the source's shipping weight when it has one", () => {
+    expect(toImportRow({ ...node("w"), weightGrams: 300 }, 1).weight_grams).toBe(300);
+    expect(toImportRow(node("w"), 1).weight_grams).toBe(0);
+  });
+});
+
+describe("recovered catalogue data", () => {
+  const catalogue = recovered as unknown as ShopifyImportNode[];
+  // The store's products when the catalogue was recovered (numbers 025-030).
+  const current = [
+    ["stitch-canvas-shorts", 25], ["stamp-tee", 26], ["rtt-trucker-cap", 27],
+    ["spine-henley", 28], ["spine-hoodie", 29], ["ripple-button-up", 30],
+  ].map(([handle, sort_order]) => ({ handle: handle as string, title: handle as string, sort_order: sort_order as number }));
+
+  it("has every old storefront product, numbered 001-024 exactly once", () => {
+    const handles = catalogue.map((n) => n.handle);
+    expect(new Set(handles).size).toBe(handles.length);
+    for (const h of SHOPIFY_HANDLE_ORDER) expect(handles).toContain(h);
+    const numbered = catalogue.filter((n) => n.displayNumber != null);
+    expect(numbered.map((n) => n.handle).sort()).toEqual([...SHOPIFY_HANDLE_ORDER].sort());
+    expect(numbered.map((n) => n.displayNumber).sort((a, b) => a! - b!)).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
+  });
+
+  it("prices everything in AUD, matching prices read straight from the archive", () => {
+    const price = (h: string) => toImportRow(catalogue.find((n) => n.handle === h)!, 0).price;
+    for (const n of catalogue) {
+      for (const e of n.variants.edges) {
+        expect(e.node.price.currencyCode).toBe("AUD");
+        expect(Number.isFinite(parseFloat(e.node.price.amount))).toBe(true);
+      }
+    }
+    expect(price("sttu-teeshirt")).toBe(55);
+    expect(price("the-magnum-opus-leather-jacket")).toBe(748);
+    expect(price("camo-jersey")).toBe(49.99);
+    expect(price("squid-ink-thermal")).toBe(48);
+  });
+
+  it("loads every image from Shopify's CDN, since knotsss.com no longer serves them", () => {
+    for (const n of catalogue) {
+      for (const e of n.images.edges) expect(e.node.url).toMatch(/^https:\/\/cdn\.shopify\.com\/s\/files\/1\/0596\/8343\/8628\/files\//);
+    }
+  });
+
+  it("flags exactly the three products whose price had to be estimated", () => {
+    expect(catalogue.filter((n) => n.archiveNote).map((n) => n.handle).sort()).toEqual(
+      ["bleko-x-knots-tee", "the-shoodie®", "untitled-oct1_21-14"].sort(),
+    );
+  });
+
+  it("restores the old grid without touching or clashing with the current products", () => {
+    const plan = planImport(catalogue, current, SHOPIFY_HANDLE_ORDER);
+    const ticked = plan.filter((c) => c.selectedByDefault);
+    expect(ticked.map((c) => c.row.handle)).toEqual(SHOPIFY_HANDLE_ORDER);
+    expect(plan.every((c) => c.status === "new")).toBe(true);
+    expect(ticked.every((c) => c.numberTakenBy === null)).toBe(true);
+    // They come back with the numbers the old storefront showed.
+    expect(ticked.map((c) => c.row.sort_order).sort((a, b) => a - b)).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
+    const numberOf = (h: string) => plan.find((c) => c.row.handle === h)!.row.sort_order;
+    expect(numberOf("sttu-teeshirt")).toBe(1);
+    expect(numberOf("the-shoodie®")).toBe(23);
+    // Products that left the store before it closed are numbered after the current ones.
+    expect(Math.min(...plan.filter((c) => !c.onOldStorefront).map((c) => c.row.sort_order))).toBe(31);
+    for (const c of plan) {
+      const ids = c.row.variants.map((v) => v.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+});
+
+describe("webSizedImageUrl", () => {
+  it("asks the CDN for at most 2048px, keeping the cache-busting version", () => {
+    expect(webSizedImageUrl("https://cdn.shopify.com/s/files/1/0596/8343/8628/files/a.png?v=1739346779")).toBe(
+      "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/a.png?v=1739346779&width=2048",
+    );
+    expect(webSizedImageUrl("https://cdn.shopify.com/x/b.jpg")).toBe("https://cdn.shopify.com/x/b.jpg?width=2048");
+  });
+
+  it("replaces an existing width rather than adding a second one", () => {
+    expect(webSizedImageUrl("https://cdn.shopify.com/x/b.jpg?v=1&width=533", 1024)).toBe("https://cdn.shopify.com/x/b.jpg?v=1&width=1024");
   });
 });
