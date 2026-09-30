@@ -7,41 +7,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { storefrontApiRequest } from "@/lib/shopify";
 import { SHOPIFY_HANDLE_ORDER, type ProductRow } from "@/lib/products";
 import {
-  IMPORT_PRODUCTS_QUERY,
   imageExtension,
   importedImagePath,
   planImport,
+  webSizedImageUrl,
   withPositions,
   type ImportCandidate,
   type ImportRow,
   type ShopifyImportNode,
 } from "@/lib/shopifyImport";
-import { ensureSettings, useSettingsStore } from "@/stores/settingsStore";
 
-const PAGE_SIZE = 20;
-// Safety stop for the pagination loop (1,000 products).
-const MAX_PAGES = 50;
-
-async function fetchAllShopifyProducts(): Promise<ShopifyImportNode[]> {
-  await ensureSettings();
-  const nodes: ShopifyImportNode[] = [];
-  let after: string | null = null;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const data = await storefrontApiRequest(IMPORT_PRODUCTS_QUERY, { first: PAGE_SIZE, after }).catch((err: unknown) => {
-      throw new Error(`Shopify: ${err instanceof Error ? err.message : String(err)}`);
-    });
-    // storefrontApiRequest returns nothing on HTTP 402 (store has no active plan).
-    if (!data) throw new Error("Shopify says this store needs an active plan, so its products can't be read.");
-    const conn = data.data?.products;
-    if (!conn) throw new Error("Shopify returned no product list.");
-    nodes.push(...conn.edges.map((e: { node: ShopifyImportNode }) => e.node));
-    if (!conn.pageInfo.hasNextPage) break;
-    after = conn.pageInfo.endCursor;
-  }
-  return nodes;
+/**
+ * The old Shopify catalogue, recovered from Common Crawl's archived copies of
+ * the store's pages (the store itself is closed). Loaded on demand so only
+ * this dialog ever downloads it.
+ */
+async function loadRecoveredCatalogue(): Promise<ShopifyImportNode[]> {
+  const mod = await import("@/data/recoveredShopifyCatalogue.json");
+  return mod.default as ShopifyImportNode[];
 }
 
 /**
@@ -56,12 +41,14 @@ async function loadExistingProducts(): Promise<ProductRow[]> {
 }
 
 /**
- * Copy one Shopify image into our own storage bucket so it survives the
- * Shopify store being closed. Falls back to the Shopify URL if the copy fails.
+ * Copy one Shopify image into our own storage bucket so it survives Shopify
+ * deleting the closed store's files. Copies the web-sized WebP version rather
+ * than the multi-megabyte original. Falls back to the Shopify URL if the copy
+ * fails.
  */
 async function copyImage(url: string, handle: string, index: number): Promise<{ url: string; copied: boolean }> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(webSizedImageUrl(url), { headers: { Accept: "image/webp,*/*" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const ext = imageExtension(res.headers.get("content-type") || blob.type, url);
@@ -123,7 +110,6 @@ interface ShopifyImportDialogProps {
 }
 
 const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDialogProps) => {
-  const shopifyDomain = useSettingsStore((s) => s.shopifyDomain);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -133,7 +119,7 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
     if (!open) return;
     let cancelled = false;
     setPhase({ kind: "loading" });
-    Promise.all([fetchAllShopifyProducts(), loadExistingProducts()])
+    Promise.all([loadRecoveredCatalogue(), loadExistingProducts()])
       .then(([nodes, existing]) => {
         if (cancelled) return;
         const plan = planImport(nodes, existing, SHOPIFY_HANDLE_ORDER);
@@ -191,13 +177,13 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display text-sm uppercase tracking-[0.15em]">Import from Shopify</DialogTitle>
+          <DialogTitle className="font-display text-sm uppercase tracking-[0.15em]">Restore old products</DialogTitle>
         </DialogHeader>
 
         {phase.kind === "loading" && (
           <div className="flex flex-col items-center gap-3 py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            <p className="font-body text-[11px] text-muted-foreground">Reading products from {shopifyDomain}…</p>
+            <p className="font-body text-[11px] text-muted-foreground">Loading your recovered catalogue…</p>
           </div>
         )}
 
@@ -205,19 +191,18 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
           <div className="py-8 space-y-3">
             <p className="font-body text-[12px]">The import couldn't start. Nothing was changed.</p>
             <p className="font-body text-[11px] text-muted-foreground">{phase.message}</p>
-            <p className="font-body text-[11px] text-muted-foreground">
-              If this is about Shopify, check the domain and storefront token under Settings ({shopifyDomain}).
-            </p>
           </div>
         )}
 
         {phase.kind === "preview" && (
           <div className="space-y-4">
             <p className="font-body text-[11px] text-muted-foreground">
-              {candidates.length} product{candidates.length !== 1 ? "s" : ""} on {shopifyDomain}
+              {candidates.length} product{candidates.length !== 1 ? "s" : ""} recovered from archived copies of your old
+              Shopify store (February 2025 to April 2026)
               {alreadyIn > 0 && ` · ${alreadyIn} already in your store (left untouched)`}. Your current products stay
-              exactly as they are; imported ones are added after them, in the old storefront's order, with their
-              original numbers and product links.
+              exactly as they are; restored ones are added after them, in the old storefront's order, with their
+              original numbers and product links. Items that weren't on your old storefront (mostly ones that had left
+              the store before it closed) start unticked.
             </p>
 
             {importable.length > 0 && (
@@ -272,10 +257,11 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
                           <Badge variant="outline" className="text-[10px]">Similar title already in store</Badge>
                         )}
                         {!c.onOldStorefront && (
-                          <Badge variant="outline" className="text-[10px]">Wasn't on old storefront</Badge>
+                          <Badge variant="outline" className="text-[10px]">Not on your old storefront</Badge>
                         )}
                         {!c.row.available && <Badge variant="outline" className="text-[10px]">Sold out</Badge>}
                       </div>
+                      {c.note && <div className="font-body text-[10px] text-muted-foreground mt-1">⚠ {c.note}</div>}
                       {c.numberTakenBy && (
                         <div className="font-body text-[10px] text-muted-foreground mt-1">
                           Number {String(c.row.sort_order).padStart(3, "0")} is also used by “{c.numberTakenBy}”
@@ -305,7 +291,7 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
               Importing {phase.done + 1} of {phase.total}: {phase.current}
             </p>
             <p className="font-body text-[10px] text-muted-foreground">
-              Copying images into your own storage. Keep this window open.
+              Copying images from Shopify into your own storage. Keep this window open.
             </p>
           </div>
         )}
@@ -323,8 +309,8 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
             {phase.summary.imagesLeftOnShopify > 0 && (
               <p className="font-body text-[11px] text-muted-foreground">
                 {phase.summary.imagesLeftOnShopify} image{phase.summary.imagesLeftOnShopify !== 1 ? "s" : ""} couldn't be
-                copied and still load from Shopify. Re-upload them from each product's edit screen before closing
-                your Shopify store.
+                copied and still load from Shopify's servers, which may stop serving them. Re-upload them from each
+                product's edit screen.
               </p>
             )}
             {phase.summary.failed.length > 0 && (

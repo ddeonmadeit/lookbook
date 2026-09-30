@@ -3,46 +3,15 @@ import type { ManualImage, ManualOption, ManualVariant } from "@/lib/products";
 /**
  * One-off migration of the old Shopify catalogue into the manual (Supabase)
  * product tables. Pure planning/mapping lives here so it can be unit tested;
- * the dashboard dialog does the network work (fetching, image copies, inserts).
+ * the dashboard dialog does the network work (image copies, inserts).
+ *
+ * The Shopify store itself is closed, so the source is a catalogue recovered
+ * from Common Crawl's archived copies of its pages (src/data), kept in the
+ * Storefront API's product shape so this mapping stays the same either way.
  *
  * Imported rows are shaped exactly like ones ProductForm creates, so editing an
  * imported product later behaves the same as editing a hand-made one.
  */
-
-// Storefront API query for the import. Paginated (the storefront's own
-// PRODUCTS_QUERY stops at 50 products, 5 images and 10 variants), and sorted by
-// creation date so display numbers can be recomputed the way the old
-// storefront did.
-export const IMPORT_PRODUCTS_QUERY = `
-  query ImportProducts($first: Int!, $after: String) {
-    products(first: $first, after: $after, sortKey: CREATED_AT) {
-      pageInfo { hasNextPage endCursor }
-      edges {
-        node {
-          id
-          handle
-          title
-          description
-          descriptionHtml
-          createdAt
-          availableForSale
-          images(first: 50) { edges { node { url altText } } }
-          options { name values }
-          variants(first: 100) {
-            edges {
-              node {
-                title
-                availableForSale
-                price { amount currencyCode }
-                selectedOptions { name value }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
 
 export interface ShopifyImportNode {
   id: string;
@@ -64,6 +33,12 @@ export interface ShopifyImportNode {
       };
     }>;
   };
+  /** Number the old storefront displayed (e.g. 7 -> "007"). Absent = number it on import. */
+  displayNumber?: number;
+  /** Shipping weight in grams, where the source had one. */
+  weightGrams?: number;
+  /** Caveat to show before importing (e.g. an estimated price). */
+  archiveNote?: string;
 }
 
 /** Insert payload for public.products (minus `position`, assigned at import time). */
@@ -105,6 +80,8 @@ export interface ImportCandidate {
   selectedByDefault: boolean;
   /** Title of the existing product already using this display number, if any. */
   numberTakenBy: string | null;
+  /** Caveat about the recovered data for this product, if any. */
+  note: string | null;
 }
 
 // Shopify's placeholder for a product with no real options (no sizes/colours).
@@ -124,8 +101,8 @@ function isDefaultOnly(node: ShopifyImportNode): boolean {
  * product without real options stores no variants (availability then comes
  * from the product-level `available` flag).
  *
- * Shopify's public API doesn't expose stock counts, so in-stock variants are
- * left untracked (stock null). Sold-out variants get stock 0 rather than only
+ * The source has no stock counts, so in-stock variants are left untracked
+ * (stock null). Sold-out variants get stock 0 rather than only
  * `available: false`: ProductForm derives untracked variants' availability
  * from the product switch on save, so without a 0 an edit would quietly mark
  * sold-out sizes as in stock again.
@@ -146,8 +123,8 @@ export function toImportRow(node: ShopifyImportNode, displayNumber: number): Imp
     images: node.images.edges.map((e) => ({ url: e.node.url, altText: e.node.altText ?? node.title })),
     available: anyAvailable,
     sort_order: displayNumber,
-    // Shopify's public API doesn't expose weights; 0 = use the store default.
-    weight_grams: 0,
+    // 0 = use the store default.
+    weight_grams: Math.max(0, Math.round(node.weightGrams ?? 0)),
   };
 
   if (isDefaultOnly(node)) {
@@ -178,8 +155,10 @@ const normTitle = (t: string) => t.trim().toLowerCase();
 /**
  * Decide what to import and in which order.
  *
- * - Display numbers are recomputed the way the old storefront showed them:
- *   every Shopify product in creation order, numbered from 1.
+ * - Display numbers: a product carrying the number the old storefront showed
+ *   keeps it. The rest are numbered in creation order, from 1 when nothing
+ *   carries a number (how the old storefront computed them), otherwise after
+ *   the highest number already in use so they can't collide.
  * - Order: products from the old storefront grid first, in that grid's order,
  *   then any others by creation date.
  * - A handle already in the store is never imported (existing products are
@@ -193,7 +172,13 @@ export function planImport(
   oldStorefrontOrder: string[],
 ): ImportCandidate[] {
   const byCreation = [...nodes].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const numberOf = new Map(byCreation.map((n, i) => [n.handle, i + 1]));
+  const numberOf = new Map<string, number>();
+  const explicit = byCreation.filter((n) => n.displayNumber != null);
+  explicit.forEach((n) => numberOf.set(n.handle, n.displayNumber!));
+  let next = explicit.length
+    ? Math.max(...explicit.map((n) => n.displayNumber!), ...existing.map((p) => p.sort_order)) + 1
+    : 1;
+  byCreation.filter((n) => n.displayNumber == null).forEach((n) => numberOf.set(n.handle, next++));
 
   const rank = new Map(oldStorefrontOrder.map((h, i) => [h, i]));
   const ordered = [...byCreation].sort((a, b) => {
@@ -220,6 +205,7 @@ export function planImport(
       onOldStorefront,
       selectedByDefault: status === "new" && onOldStorefront,
       numberTakenBy: status === "exists" ? null : (numberOwner.get(row.sort_order) ?? null),
+      note: node.archiveNote ?? null,
     };
   });
 }
@@ -262,6 +248,18 @@ export function imageExtension(contentType: string | null, url: string): string 
     // fall through
   }
   return "jpg";
+}
+
+/**
+ * The web-sized version of a Shopify CDN image: at most `maxWidth` pixels wide
+ * (the CDN never upscales). Request it with `Accept: image/webp` and the CDN
+ * answers with WebP, keeping transparency: the same versions the Shopify
+ * storefront served to browsers, and a fraction of the originals' size.
+ */
+export function webSizedImageUrl(url: string, maxWidth = 2048): string {
+  const u = new URL(url);
+  u.searchParams.set("width", String(maxWidth));
+  return u.toString();
 }
 
 /**
