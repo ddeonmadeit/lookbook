@@ -1053,46 +1053,40 @@
   "id": "gid://shopify/Product/7696080601124",
   "handle": "the-magnum-opus-leather-jacket",
   "title": "The Magnum Opus Leather Jacket",
-  "description": "1 OF 1\nCactus Leather Jacket Designed For Customisation.\n\n \n\nSTATS:\n\nPatch-Switch® Technology\n\nBack Embroidery\n\n11 Patch Clips\n\nYKK Silver Zipper\n\nCustom Zipper Puller\n\nFabric Colour Block\n\nLinen Lining\n\nStreetwear Fit\n\n340GSM",
-  "descriptionHtml": "<p>1 OF 1<br>Cactus Leather Jacket Designed For Customisation.</p>\n<p> </p>\n<p>STATS:</p>\n<ul>\n<li>Patch-Switch® Technology</li>\n<li>Back Embroidery</li>\n<li>11 Patch Clips</li>\n<li>YKK Silver Zipper</li>\n<li>Custom Zipper Puller</li>\n<li>Fabric Colour Block</li>\n<li>Linen Lining</li>\n<li>Streetwear Fit</li>\n<li>340GSM</li>\n</ul>",
+  "description": "1 OF 1\nLeather Jacket Designed For Customisation.\n\n \n\nSTATS:\n\nPatch-Switch® Technology\n\nBack Embroidery\n\n11 Patch Clips\n\nYKK Silver Zipper\n\nCustom Zipper Puller\n\nFabric Colour Block\n\nLinen Lining\n\n340GSM",
+  "descriptionHtml": "<p>1 OF 1<br>Leather Jacket Designed For Customisation.</p>\n<p> </p>\n<p>STATS:</p>\n<ul>\n<li>Patch-Switch® Technology</li>\n<li>Back Embroidery</li>\n<li>11 Patch Clips</li>\n<li>YKK Silver Zipper</li>\n<li>Custom Zipper Puller</li>\n<li>Fabric Colour Block</li>\n<li>Linen Lining</li>\n<li>340GSM</li>\n</ul>",
   "createdAt": "2024-08-26T17:09:53+10:00",
   "availableForSale": false,
   "images": {
    "edges": [
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_59833e53-53d1-473b-8306-b77530566bb4.png?v=1724656198",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-4794.jpg?v=1769566344",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-4793.jpg?v=1769566344",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_d82fff61-e23d-40d3-822b-fec7ac32de31.png?v=1769566344",
       "altText": "The Magnum Opus Leather Jacket"
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_a47b88a5-6a29-43b1-8e2d-4fb1f6791685.png?v=1724656199",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_362d213f-78e8-41bc-871d-ec03a0eca531.png?v=1769566344",
       "altText": "The Magnum Opus Leather Jacket"
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_cfcbd7b1-3408-4e7b-8aea-14e25a6cabef.png?v=1724656200",
-      "altText": "The Magnum Opus Leather Jacket"
-     }
-    },
-    {
-     "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_da1424a1-5abb-47c9-a01d-a9247caee11a.png?v=1724656199",
-      "altText": "The Magnum Opus Leather Jacket"
-     }
-    },
-    {
-     "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_d82fff61-e23d-40d3-822b-fec7ac32de31.png?v=1724656202",
-      "altText": "The Magnum Opus Leather Jacket"
-     }
-    },
-    {
-     "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_362d213f-78e8-41bc-871d-ec03a0eca531.png?v=1724656200",
-      "altText": "The Magnum Opus Leather Jacket"
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/FullSizeRender_e0db7b8e-0456-4780-b44f-3601b3f48e70.jpg?v=1769566492",
+      "altText": null
      }
     }
    ]
@@ -2153,25 +2147,25 @@
    "edges": [
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_1a7319f1-2bf9-4804-89b6-075330645f3b.png?v=1724656199",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-4803.jpg?v=1769638868",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_a9b3f95c-8be7-4baf-965f-2663a896a3e3.png?v=1769638868",
       "altText": "Crescent Washed Straight Leg Jeans"
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_a9b3f95c-8be7-4baf-965f-2663a896a3e3.png?v=1724656199",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_c5a045c0-f156-4987-85a7-04801fd8ccd7.png?v=1769638868",
       "altText": "Crescent Washed Straight Leg Jeans"
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_c5a045c0-f156-4987-85a7-04801fd8ccd7.png?v=1724656199",
-      "altText": "Crescent Washed Straight Leg Jeans"
-     }
-    },
-    {
-     "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_baf5dcd4-0698-4661-98e7-f82c05a95aae.png?v=1724656199",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_baf5dcd4-0698-4661-98e7-f82c05a95aae.png?v=1769638868",
       "altText": "Crescent Washed Straight Leg Jeans"
      }
     }
@@ -5251,8 +5245,8 @@
   "id": "gid://shopify/Product/7890100453412",
   "handle": "camo-mohair-sweater",
   "title": "Camo Mohair Sweater",
-  "description": "Our mohair sweaters are soft, breathable, and naturally insulating — hand-finished for a textured, elevated feel. \nMade for comfort, built to last.\n\nSTATS\n• Signature Ripple® Pattern\n\n• Sustainably Sourced Mohair\n\n[THIS IS A PREORDER] \n\nOrder will arrive within 2-4 weeks depending on location",
-  "descriptionHtml": "<meta charset=\"utf-8\">\n<p>Our mohair sweaters are soft, breathable, and naturally insulating — hand-finished for a textured, elevated feel. <br>Made for comfort, built to last.<br><br><strong>STATS<br></strong>• Signature Ripple® Pattern</p>\n<meta charset=\"utf-8\">\n<p>• Sustainably Sourced Mohair</p>\n<p>[THIS IS A PREORDER] </p>\n<p>Order will arrive within 2-4 weeks depending on location </p>\n<meta charset=\"utf-8\">\n<p> </p>\n<p> </p>",
+  "description": "Our mohair sweaters are soft, breathable, and naturally insulating — hand-finished for a textured, elevated feel. \nMade for comfort, built to last.\n\nSTATS\n• Signature Ripple® Pattern\n\n• Sustainably Sourced Mohair",
+  "descriptionHtml": "<meta charset=\"utf-8\">\n<p>Our mohair sweaters are soft, breathable, and naturally insulating — hand-finished for a textured, elevated feel. <br>Made for comfort, built to last.<br><br><strong>STATS<br></strong>• Signature Ripple® Pattern</p>\n<meta charset=\"utf-8\">\n<p>• Sustainably Sourced Mohair</p>\n<meta charset=\"utf-8\">\n<p> </p>\n<p> </p>",
   "createdAt": "2025-06-25T16:16:33+10:00",
   "availableForSale": false,
   "images": {
@@ -6002,25 +5996,46 @@
   "id": "gid://shopify/Product/7967664209956",
   "handle": "untitled-oct1_21-14",
   "title": "Mystery Box",
-  "description": "",
-  "descriptionHtml": "",
-  "createdAt": "",
+  "description": "Every Mystery Box Comes With Knots Cash®\n\n• 2 Pieces inside\n\n \n\n• Multiple Size Options\n\n \n\n• Crate Included\n\nFor our 2 year anniversary we are giving away $10,000 worth of Knots Cash® in total across mystery crates. \n\nVisit the “KASH” highlight on our instagram (@knots.raw) to see how to redeem Knots Cash® \n\n \n\n \n\nReturns Available for unmanageable size concerns\nphoto evidence of poor fitting required via email to: knots.raw@gmail.com\nNo Returns based on style preferences",
+  "descriptionHtml": "<p> </p>\n<p>Every Mystery Box Comes With Knots Cash<span>®</span></p>\n<p>• 2 Pieces inside</p>\n<p> </p>\n<p>• Multiple Size Options</p>\n<p> </p>\n<p>• Crate Included</p>\n<p>For our 2 year anniversary we are giving away <strong>$10,000</strong> worth of Knots Cash® in total across mystery crates. </p>\n<p>Visit the “KASH” highlight on our instagram (@knots.raw) to see how to redeem<strong> Knots Cash</strong><strong><span>®</span></strong> </p>\n<p> </p>\n<p> </p>\n<p><strong>Returns Available</strong> for unmanageable size concerns<br>photo evidence of poor fitting required via email to: knots.raw@gmail.com<br><strong>No Returns</strong> based on style preferences<br><br></p>\n<p> </p>\n<p> </p>",
+  "createdAt": "2025-10-01T21:14:18+10:00",
   "availableForSale": false,
   "images": {
    "edges": [
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/New_Project.png",
-      "altText": "Mystery Box"
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/New_Project.png?v=1760842293",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/06EF6D59-01CE-4B29-9470-B15DBB1515E1.jpg?v=1766979767",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/crate.png?v=1766979767",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/photo-output.jpg?v=1764470697",
+      "altText": null
      }
     }
    ]
   },
   "options": [
    {
-    "name": "Title",
+    "name": "Size",
     "values": [
-     "Default Title"
+     "S",
+     "M",
+     "L",
+     "XL"
     ]
    }
   ],
@@ -6028,7 +6043,7 @@
    "edges": [
     {
      "node": {
-      "title": "Default Title",
+      "title": "S",
       "availableForSale": false,
       "price": {
        "amount": "59.00",
@@ -6036,17 +6051,65 @@
       },
       "selectedOptions": [
        {
-        "name": "Title",
-        "value": "Default Title"
+        "name": "Size",
+        "value": "S"
+       }
+      ]
+     }
+    },
+    {
+     "node": {
+      "title": "M",
+      "availableForSale": false,
+      "price": {
+       "amount": "59.00",
+       "currencyCode": "AUD"
+      },
+      "selectedOptions": [
+       {
+        "name": "Size",
+        "value": "M"
+       }
+      ]
+     }
+    },
+    {
+     "node": {
+      "title": "L",
+      "availableForSale": false,
+      "price": {
+       "amount": "59.00",
+       "currencyCode": "AUD"
+      },
+      "selectedOptions": [
+       {
+        "name": "Size",
+        "value": "L"
+       }
+      ]
+     }
+    },
+    {
+     "node": {
+      "title": "XL",
+      "availableForSale": false,
+      "price": {
+       "amount": "59.00",
+       "currencyCode": "AUD"
+      },
+      "selectedOptions": [
+       {
+        "name": "Size",
+        "value": "XL"
        }
       ]
      }
     }
    ]
   },
-  "weightGrams": 0,
+  "weightGrams": 5000,
   "displayNumber": 21,
-  "archiveNote": "Only the listing card was archived: price estimated from the April 2026 USD price (anything from $58.32 to $59.71 fits), and no sizes or description."
+  "archiveNote": "Price estimated: the archive only has the April 2026 USD price ($43), which fits anything from $58.30 to $59.69."
  },
  {
   "id": "gid://shopify/Product/7970125414436",
@@ -6066,43 +6129,61 @@
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2244.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2243.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2243.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/AA365A6C-B933-4F75-848E-CCC8BDC6CAE6.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/AA365A6C-B933-4F75-848E-CCC8BDC6CAE6.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/A2767EA6-7149-44F5-BE98-33CD43D8AC35.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/A2767EA6-7149-44F5-BE98-33CD43D8AC35.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/F78DFFA9-7C8E-4E9A-AD5A-8FCF4746363E.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/B57F5868-04D8-4E96-97BD-79F8F6F73B6B.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/E99E2C4F-0388-45B8-BAB5-64E5D7E33FF8.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/22799971-9309-4DE2-9DDC-D59FE468D0FD.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/02E160D4-7149-45F1-B1FB-DA614B93409F.jpg?v=1763272000",
       "altText": null
      }
     },
     {
      "node": {
-      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/F54DB20A-7DC3-4298-85F9-F0D4EAD6182D.jpg?v=1759558589",
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2244.jpg?v=1763272000",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/B57F5868-04D8-4E96-97BD-79F8F6F73B6B.jpg?v=1763272000",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/22799971-9309-4DE2-9DDC-D59FE468D0FD.jpg?v=1763272000",
+      "altText": null
+     }
+    },
+    {
+     "node": {
+      "url": "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/F54DB20A-7DC3-4298-85F9-F0D4EAD6182D.jpg?v=1763272000",
       "altText": null
      }
     }
@@ -6121,7 +6202,7 @@
     "values": [
      "S (28-30)",
      "M (30-32)",
-     "L (32-34)",
+     "L",
      "XL (34-36)"
     ]
    }
@@ -6170,7 +6251,7 @@
     },
     {
      "node": {
-      "title": "Charcoal / L (32-34)",
+      "title": "Charcoal / L",
       "availableForSale": true,
       "price": {
        "amount": "170.00",
@@ -6183,7 +6264,7 @@
        },
        {
         "name": "Size",
-        "value": "L (32-34)"
+        "value": "L"
        }
       ]
      }
@@ -6250,7 +6331,7 @@
     },
     {
      "node": {
-      "title": "Navy / L (32-34)",
+      "title": "Navy / L",
       "availableForSale": true,
       "price": {
        "amount": "170.00",
@@ -6263,7 +6344,7 @@
        },
        {
         "name": "Size",
-        "value": "L (32-34)"
+        "value": "L"
        }
       ]
      }
