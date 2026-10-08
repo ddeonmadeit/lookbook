@@ -683,7 +683,7 @@ const ProductDetail = () => {
                             <div className="w-20 h-20 flex items-center justify-center">
                               {img && (
                                 <img
-                                  src={img.url}
+                                  src={img.thumbUrl || img.url}
                                   alt={img.altText || p.node.title}
                                   className="max-w-full max-h-full object-contain"
                                   draggable={false}

@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import type { ManualImage, ManualOption, ManualVariant, ProductRow } from "@/lib/products";
+import { optimizeImage } from "@/lib/optimizeImage";
+import { storeOptimisedPhoto } from "@/lib/storeImage";
 
 function slugify(value: string) {
   return value
@@ -121,18 +123,13 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
     if (!file) return;
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
-      const path = `${handle || slugify(title) || "product"}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("product-images").upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-      if (error) {
-        toast.error("Upload failed", { description: error.message });
-        return;
-      }
-      const { data } = supabase.storage.from("product-images").getPublicUrl(path);
-      setImages((prev) => [...prev, { url: data.publicUrl, altText: title }]);
+      // Store a fast-loading copy (≤1500px, WebP where the browser can make one)
+      // and a small one for grid tiles, never the multi-megabyte original.
+      const { full, thumb, fallbackType } = await optimizeImage(file);
+      const stored = await storeOptimisedPhoto(full, thumb, handle || slugify(title) || "product", images.length, fallbackType);
+      setImages((prev) => [...prev, { url: stored.url, altText: title, thumb: stored.thumb }]);
+    } catch (err) {
+      toast.error("Upload failed", { description: err instanceof Error ? err.message : String(err) });
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -288,7 +285,7 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
           <div className="flex flex-wrap gap-2">
             {images.map((img, idx) => (
               <div key={idx} className="relative w-16 h-16 border border-border flex items-center justify-center">
-                <img src={img.url} alt={img.altText ?? ""} className="max-w-full max-h-full object-contain" />
+                <img src={img.thumb || img.url} alt={img.altText ?? ""} className="max-w-full max-h-full object-contain" />
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}

@@ -4,7 +4,6 @@ import {
   planImport,
   storageFolderFor,
   toImportRow,
-  webSizedImageUrl,
   withPositions,
   type ShopifyImportNode,
 } from "@/lib/shopifyImport";
@@ -293,18 +292,5 @@ describe("recovered catalogue data", () => {
       const ids = c.row.variants.map((v) => v.id);
       expect(new Set(ids).size).toBe(ids.length);
     }
-  });
-});
-
-describe("webSizedImageUrl", () => {
-  it("asks the CDN for at most 2048px, keeping the cache-busting version", () => {
-    expect(webSizedImageUrl("https://cdn.shopify.com/s/files/1/0596/8343/8628/files/a.png?v=1739346779")).toBe(
-      "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/a.png?v=1739346779&width=2048",
-    );
-    expect(webSizedImageUrl("https://cdn.shopify.com/x/b.jpg")).toBe("https://cdn.shopify.com/x/b.jpg?width=2048");
-  });
-
-  it("replaces an existing width rather than adding a second one", () => {
-    expect(webSizedImageUrl("https://cdn.shopify.com/x/b.jpg?v=1&width=533", 1024)).toBe("https://cdn.shopify.com/x/b.jpg?v=1&width=1024");
   });
 });

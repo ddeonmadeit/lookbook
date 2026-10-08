@@ -10,22 +10,55 @@ import type { Json } from "@/integrations/supabase/types";
 import { SHOPIFY_HANDLE_ORDER, type ProductRow } from "@/lib/products";
 import {
   planImport,
-  webSizedImageUrl,
   withPositions,
   type ImportCandidate,
   type ImportRow,
   type ShopifyImportNode,
 } from "@/lib/shopifyImport";
-import { downloadImage, storeProductImage } from "@/lib/storeImage";
+import { downloadImage, storeOptimisedPhoto } from "@/lib/storeImage";
+import { type FallbackType, type MediaMap, type PhotoMap, rewriteDescription } from "@/lib/photoUpdates";
 
 /**
  * The old Shopify catalogue, recovered from Common Crawl's archived copies of
  * the store's pages (the store itself is closed). Loaded on demand so only
  * this dialog ever downloads it.
  */
-async function loadRecoveredCatalogue(): Promise<ShopifyImportNode[]> {
-  const mod = await import("@/data/recoveredShopifyCatalogue.json");
-  return mod.default as ShopifyImportNode[];
+const BASE = import.meta.env.BASE_URL;
+
+/** A staged (saved, optimised) copy of a recovered photo, keyed by its full-size path. */
+interface StagedCopy {
+  thumb: string;
+  fallbackType: FallbackType;
+}
+
+interface RecoveredCatalogue {
+  nodes: ShopifyImportNode[];
+  staged: Map<string, StagedCopy>;
+  media: MediaMap;
+}
+
+/**
+ * The recovered catalogue with every photo pointed at its saved, optimised copy
+ * on this site instead of Shopify's CDN (Shopify can drop the closed store's
+ * files at any time). Loaded on demand so only this dialog ever downloads it.
+ */
+async function loadRecoveredCatalogue(): Promise<RecoveredCatalogue> {
+  const [cat, opt] = await Promise.all([import("@/data/recoveredShopifyCatalogue.json"), import("@/data/photoOptimisations.json")]);
+  const { photos, media } = opt.default as { photos: PhotoMap; media: MediaMap };
+  const staged = new Map<string, StagedCopy>();
+  const nodes = (cat.default as ShopifyImportNode[]).map((n) => ({
+    ...n,
+    images: {
+      edges: n.images.edges.map((e) => {
+        const copy = photos[e.node.url];
+        if (!copy) return e;
+        const full = BASE + copy.full;
+        staged.set(full, { thumb: BASE + copy.thumb, fallbackType: copy.alpha ? "image/png" : "image/jpeg" });
+        return { node: { ...e.node, url: full } };
+      }),
+    },
+  }));
+  return { nodes, staged, media };
 }
 
 /**
@@ -40,16 +73,21 @@ async function loadExistingProducts(): Promise<ProductRow[]> {
 }
 
 /**
- * Copy one Shopify image into our own storage bucket so it survives Shopify
- * deleting the closed store's files. Copies the web-sized WebP version rather
- * than the multi-megabyte original. Falls back to the Shopify URL (and says
- * why) if the copy fails.
+ * Copy one recovered photo's saved, optimised copy (and its thumbnail) into our
+ * storage. If that fails the photo keeps pointing at the copy on this site, and
+ * the summary says why.
  */
-async function copyImage(url: string, handle: string, index: number): Promise<{ url: string; error?: string }> {
+async function copyImage(
+  url: string,
+  handle: string,
+  index: number,
+  staged: Map<string, StagedCopy>,
+): Promise<{ url: string; thumb?: string; error?: string }> {
+  const copy = staged.get(url);
+  if (!copy) return { url, error: "no saved copy of this photo" };
   try {
-    const blob = await downloadImage(webSizedImageUrl(url), true);
-    const fallback = /\.png$/i.test(new URL(url).pathname) ? "image/png" : "image/jpeg";
-    return { url: await storeProductImage(blob, handle, index, fallback) };
+    const [full, thumb] = await Promise.all([downloadImage(url, false), downloadImage(copy.thumb, false)]);
+    return await storeOptimisedPhoto(full, thumb, handle, index, copy.fallbackType);
   } catch (err) {
     return { url, error: err instanceof Error ? err.message : String(err) };
   }
@@ -83,7 +121,7 @@ interface Summary {
   imported: number;
   skipped: number;
   failed: Array<{ title: string; error: string }>;
-  imagesLeftOnShopify: number;
+  imagesNotCopied: number;
   /** Storage's message for the first image that couldn't be copied. */
   imageError: string | null;
 }
@@ -106,15 +144,19 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [nextPosition, setNextPosition] = useState(1);
+  const [staged, setStaged] = useState<Map<string, StagedCopy>>(new Map());
+  const [media, setMedia] = useState<MediaMap>({});
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setPhase({ kind: "loading" });
     Promise.all([loadRecoveredCatalogue(), loadExistingProducts()])
-      .then(([nodes, existing]) => {
+      .then(([catalogue, existing]) => {
         if (cancelled) return;
-        const plan = planImport(nodes, existing, SHOPIFY_HANDLE_ORDER);
+        setStaged(catalogue.staged);
+        setMedia(catalogue.media);
+        const plan = planImport(catalogue.nodes, existing, SHOPIFY_HANDLE_ORDER);
         // Same rule as the Products tab: append after the current grid.
         setNextPosition(existing.length ? Math.max(...existing.map((p) => p.position ?? 0)) + 1 : 1);
         setCandidates(plan);
@@ -143,17 +185,17 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
   const runImport = async () => {
     const chosen = candidates.filter((c) => c.status !== "exists" && selected.has(c.row.handle)).map((c) => c.row);
     const rows = withPositions(chosen, nextPosition);
-    const summary: Summary = { imported: 0, skipped: 0, failed: [], imagesLeftOnShopify: 0, imageError: null };
+    const summary: Summary = { imported: 0, skipped: 0, failed: [], imagesNotCopied: 0, imageError: null };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       setPhase({ kind: "importing", done: i, total: rows.length, current: row.title });
-      const copies = await Promise.all(row.images.map((img, idx) => copyImage(img.url, row.handle, idx)));
-      summary.imagesLeftOnShopify += copies.filter((c) => c.error).length;
+      const copies = await Promise.all(row.images.map((img, idx) => copyImage(img.url, row.handle, idx, staged)));
+      summary.imagesNotCopied += copies.filter((c) => c.error).length;
       summary.imageError ??= copies.find((c) => c.error)?.error ?? null;
-      const images = row.images.map((img, idx) => ({ ...img, url: copies[idx].url }));
+      const images = row.images.map((img, idx) => ({ ...img, url: copies[idx].url, ...(copies[idx].thumb ? { thumb: copies[idx].thumb } : {}) }));
 
-      const outcome = await insertProduct({ ...row, images });
+      const outcome = await insertProduct({ ...row, images, description_html: rewriteDescription(row.description_html, media, BASE) });
       if (outcome === "imported") summary.imported++;
       else if (outcome === "skipped") summary.skipped++;
       else summary.failed.push({ title: row.title, error: outcome.error });
@@ -229,7 +271,11 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
                     />
                     <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
                       {c.row.images[0] && (
-                        <img src={c.row.images[0].url} alt="" className="max-w-full max-h-full object-contain" />
+                        <img
+                          src={staged.get(c.row.images[0].url)?.thumb ?? c.row.images[0].url}
+                          alt=""
+                          className="max-w-full max-h-full object-contain"
+                        />
                       )}
                     </div>
                     <label htmlFor={id} className="flex-1 min-w-0 cursor-pointer">
@@ -284,7 +330,7 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
               Importing {phase.done + 1} of {phase.total}: {phase.current}
             </p>
             <p className="font-body text-[10px] text-muted-foreground">
-              Copying images from Shopify into your own storage. Keep this window open.
+              Copying images into your own storage. Keep this window open.
             </p>
           </div>
         )}
@@ -299,10 +345,10 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
                 {phase.summary.skipped} skipped because they were already in your store.
               </p>
             )}
-            {phase.summary.imagesLeftOnShopify > 0 && (
+            {phase.summary.imagesNotCopied > 0 && (
               <p className="font-body text-[11px] text-muted-foreground">
-                {phase.summary.imagesLeftOnShopify} image{phase.summary.imagesLeftOnShopify !== 1 ? "s" : ""} couldn't be
-                copied and still load from Shopify's servers, which may stop serving them.
+                {phase.summary.imagesNotCopied} image{phase.summary.imagesNotCopied !== 1 ? "s" : ""} couldn't be
+                copied into your storage, so for now they load from the backup copies on this site.
                 {phase.summary.imageError && ` Storage said: “${phase.summary.imageError}”.`}
               </p>
             )}

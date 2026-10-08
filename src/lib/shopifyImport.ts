@@ -249,15 +249,3 @@ export function imageExtension(contentType: string | null, url: string): string 
   }
   return "jpg";
 }
-
-/**
- * The web-sized version of a Shopify CDN image: at most `maxWidth` pixels wide
- * (the CDN never upscales). Request it with `Accept: image/webp` and the CDN
- * answers with WebP, keeping transparency: the same versions the Shopify
- * storefront served to browsers, and a fraction of the originals' size.
- */
-export function webSizedImageUrl(url: string, maxWidth = 2048): string {
-  const u = new URL(url);
-  u.searchParams.set("width", String(maxWidth));
-  return u.toString();
-}

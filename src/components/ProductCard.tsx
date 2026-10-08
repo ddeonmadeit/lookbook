@@ -8,9 +8,11 @@ interface ProductCardProps {
   product: ShopifyProduct;
   index: number;
   displayNumber?: string;
+  /** Rendered width of the tile, e.g. "34vw", so the browser picks the thumbnail or full photo. */
+  sizes?: string;
 }
 
-export const ProductCard = ({ product, index, displayNumber }: ProductCardProps) => {
+export const ProductCard = ({ product, index, displayNumber, sizes = "34vw" }: ProductCardProps) => {
   const { node } = product;
   const image = node.images.edges[0]?.node;
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -35,7 +37,9 @@ export const ProductCard = ({ product, index, displayNumber }: ProductCardProps)
                 />
               )}
               <img
-                src={image.url}
+                src={image.thumbUrl || image.url}
+                srcSet={image.thumbUrl ? `${image.thumbUrl} 640w, ${image.url} 1500w` : undefined}
+                sizes={image.thumbUrl ? sizes : undefined}
                 alt={image.altText || node.title}
                 className={`max-w-[95%] max-h-[95%] object-contain transition-all duration-500 ease-out group-hover:scale-[1.03] will-change-transform ${
                   imageLoaded ? "opacity-100" : "opacity-0"
