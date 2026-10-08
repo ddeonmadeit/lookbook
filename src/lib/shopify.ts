@@ -32,6 +32,8 @@ export interface ShopifyProduct {
         node: {
           url: string;
           altText: string | null;
+          /** 640px copy for grid tiles, when the photo has one. */
+          thumbUrl?: string | null;
         };
       }>;
     };

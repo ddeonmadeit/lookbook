@@ -46,7 +46,8 @@ export async function storeProductImage(blob: Blob, handle: string, index: numbe
     async (b) => {
       const path = uniqueImagePath(handle, index, imageExtension(b.type, ""));
       const { error } = await supabase.storage.from(BUCKET).upload(path, b, {
-        cacheControl: "3600",
+        // Names are never reused, so browsers and the CDN can keep a copy for a year.
+        cacheControl: "31536000",
         upsert: false,
         contentType: b.type || undefined,
       });
@@ -55,4 +56,19 @@ export async function storeProductImage(blob: Blob, handle: string, index: numbe
     },
     reencode,
   );
+}
+
+/** Save an optimised photo and its thumbnail; returns both public URLs. */
+export async function storeOptimisedPhoto(
+  full: Blob,
+  thumb: Blob,
+  handle: string,
+  index: number,
+  fallbackType: FallbackType,
+): Promise<{ url: string; thumb: string }> {
+  const [url, thumbUrl] = await Promise.all([
+    storeProductImage(full, handle, index, fallbackType),
+    storeProductImage(thumb, handle, index, fallbackType),
+  ]);
+  return { url, thumb: thumbUrl };
 }

@@ -69,7 +69,8 @@ import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/se
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
 import ShopifyImportDialog from "./ShopifyImportDialog";
-import RestoredPhotosDialog from "./RestoredPhotosDialog";
+import OptimisePhotosDialog from "./OptimisePhotosDialog";
+import { needsOptimising } from "@/lib/photoUpdates";
 import OverviewTab from "./OverviewTab";
 import CustomersTab from "./CustomersTab";
 import EmailTemplatesTab from "./EmailTemplatesTab";
@@ -369,8 +370,10 @@ const ProductsTab = () => {
     persistOrder(sortByPreset(products, preset));
   };
 
-  // Restored products whose photos still load from the closed Shopify store.
-  const onShopify = products.filter((p) => p.images?.some((img) => img.url.includes("cdn.shopify.com"))).length;
+  // Products whose photos (or description media) still load from Shopify, or aren't optimised yet.
+  const toOptimise = products.filter(
+    (p) => p.images?.some(needsOptimising) || (p.description_html ?? "").includes("cdn.shopify.com"),
+  ).length;
 
   const nextPosition = products.length
     ? Math.max(...products.map((p) => p.position ?? 0)) + 1
@@ -406,14 +409,15 @@ const ProductsTab = () => {
         </div>
       </div>
 
-      {!loading && onShopify > 0 && (
+      {!loading && toOptimise > 0 && (
         <div className="border border-border rounded-md p-3 mb-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <p className="font-body text-[11px] text-muted-foreground">
-            {onShopify} restored product{onShopify !== 1 ? "s" : ""} still load their photos from Shopify's servers, which
-            can delete them at any time. Move them into your storage, with the backgrounds removed from the product shots.
+            {toOptimise} product{toOptimise !== 1 ? "s have" : " has"} photos that still load from Shopify's servers or
+            aren't optimised, which makes the shop slow. Optimise them to move everything into your storage at a fraction
+            of the size.
           </p>
           <Button size="sm" className="flex-shrink-0" onClick={() => setPhotosOpen(true)}>
-            Update photos
+            Optimise photos
           </Button>
         </div>
       )}
@@ -468,7 +472,7 @@ const ProductsTab = () => {
       </Dialog>
 
       <ShopifyImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={load} />
-      <RestoredPhotosDialog open={photosOpen} onOpenChange={setPhotosOpen} onUpdated={load} />
+      <OptimisePhotosDialog open={photosOpen} onOpenChange={setPhotosOpen} onUpdated={load} />
     </div>
   );
 };

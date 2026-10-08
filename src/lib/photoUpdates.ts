@@ -1,65 +1,85 @@
 import type { ManualImage } from "@/lib/products";
-import { storageFolderFor, webSizedImageUrl } from "@/lib/shopifyImport";
+import { storageFolderFor } from "@/lib/shopifyImport";
 
 /**
- * Follow-up to the catalogue restore: the restored products' photos still load
- * from Shopify's CDN, which can drop the closed store's files at any time. Each
- * photo is either replaced with a background-removed cut-out (product shots,
- * prepared offline and shipped with the site) or moved into our own storage
- * unchanged (campaign shots, close-ups, size charts).
+ * Moving product photos off Shopify and making them load fast. Every product
+ * photo should end up in our own storage as a WebP of at most 1500px plus a
+ * 640px thumbnail for grid tiles.
  *
- * Pure logic lives here; the dashboard dialog does the downloads and uploads.
+ * Photos recovered from the old Shopify store, and the current products'
+ * original PNGs, were optimised offline (product shots also had their
+ * backgrounds removed) and ship with the site as staged files; the photo map
+ * says which staged pair replaces which current URL. Any other photo already
+ * in our storage without a thumbnail is optimised in the browser instead.
+ *
+ * Pure logic lives here; the dashboard dialogs do the downloads and uploads.
  */
 
-/** One restored photo and what happens to it. */
-export interface PhotoUpdate {
-  /** The photo's URL as the restore stored it (on Shopify's CDN). */
-  from: string;
-  /** Site-relative path of its background-removed version, if it has one. */
-  cutout?: string;
-  /** Whether the photo has transparency, so a fallback re-encode keeps it. */
-  transparent?: boolean;
+export interface StagedPhoto {
+  /** Site-relative paths of the optimised full photo and its thumbnail. */
+  full: string;
+  thumb: string;
+  /** Whether it has transparency (decides the fallback format). */
+  alpha: boolean;
+  /** Background removed. */
+  cutout?: boolean;
 }
 
-/** Updates by product handle, in the product's original photo order. */
-export type PhotoManifest = Record<string, PhotoUpdate[]>;
+/** Staged replacements by the URL they replace. */
+export type PhotoMap = Record<string, StagedPhoto>;
+/** Self-hosted copies of media linked from product descriptions, by the URL they replace. */
+export type MediaMap = Record<string, string>;
 
 export type FallbackType = "image/png" | "image/jpeg";
 
-export interface PlannedPhoto {
-  /** Position in the product's images array. */
-  index: number;
-  kind: "cutout" | "copy";
-  /** Where to download the new version from. */
-  source: string;
-  /** Format to re-encode to if storage refuses WebP. */
-  fallbackType: FallbackType;
-}
+export type PlannedPhoto =
+  | { index: number; kind: "staged"; full: string; thumb: string; cutout: boolean; fallbackType: FallbackType }
+  | { index: number; kind: "reencode"; source: string };
+
+const OWN_STORAGE = "/storage/v1/object/public/product-images/";
 
 /**
- * Match a product's current photos to its updates by URL. A photo whose URL no
- * longer matches (replaced or edited since the restore) is left alone, as is
- * any photo that isn't in the manifest.
+ * What to do with each of a product's photos: swap in its staged pair, or
+ * optimise it in the browser if it's in our storage without a thumbnail.
+ * Anything else (already optimised, or hosted elsewhere) is left alone, so a
+ * second run does nothing.
  */
-export function planPhotoUpdates(images: ManualImage[], updates: PhotoUpdate[] | undefined, base = "/"): PlannedPhoto[] {
-  if (!updates) return [];
-  const byUrl = new Map(updates.map((u) => [u.from, u]));
+export function planPhotoUpdates(images: ManualImage[], photos: PhotoMap, base = "/"): PlannedPhoto[] {
   const planned: PlannedPhoto[] = [];
   images.forEach((img, index) => {
-    const u = byUrl.get(img.url);
-    if (!u) return;
-    planned.push(
-      u.cutout
-        ? { index, kind: "cutout", source: base + u.cutout, fallbackType: "image/png" }
-        : { index, kind: "copy", source: webSizedImageUrl(u.from, 1500), fallbackType: u.transparent ? "image/png" : "image/jpeg" },
-    );
+    const staged = photos[img.url];
+    if (staged) {
+      planned.push({
+        index,
+        kind: "staged",
+        full: base + staged.full,
+        thumb: base + staged.thumb,
+        cutout: !!staged.cutout,
+        fallbackType: staged.alpha ? "image/png" : "image/jpeg",
+      });
+    } else if (img.url.includes(OWN_STORAGE) && !img.thumb) {
+      planned.push({ index, kind: "reencode", source: img.url });
+    }
   });
   return planned;
 }
 
-/** The photo list with new URLs swapped in; order, alt text and every other photo unchanged. */
-export function withReplacedImages(images: ManualImage[], replaced: Map<number, string>): ManualImage[] {
-  return images.map((img, i) => (replaced.has(i) ? { ...img, url: replaced.get(i)! } : img));
+/** The photo list with new URLs (and thumbnails) swapped in; order and alt text unchanged. */
+export function withReplacedImages(images: ManualImage[], replaced: Map<number, { url: string; thumb: string }>): ManualImage[] {
+  return images.map((img, i) => (replaced.has(i) ? { ...img, ...replaced.get(i)! } : img));
+}
+
+/** A description with links to Shopify-hosted media pointed at their self-hosted copies. */
+export function rewriteDescription(html: string | null, media: MediaMap, base = "/"): string | null {
+  if (!html) return html;
+  let out = html;
+  for (const [from, to] of Object.entries(media)) out = out.split(from).join(base + to);
+  return out;
+}
+
+/** Whether a photo would load faster once optimised (still on Shopify, or in our storage without a thumbnail). */
+export function needsOptimising(img: ManualImage): boolean {
+  return img.url.includes("cdn.shopify.com") || (img.url.includes(OWN_STORAGE) && !img.thumb);
 }
 
 /**
@@ -70,12 +90,18 @@ export function uniqueImagePath(handle: string, index: number, ext: string, now 
   return `${storageFolderFor(handle)}/${now}-${index + 1}-${Math.floor(rand * 36 ** 4).toString(36)}.${ext}`;
 }
 
+/** Largest size that fits within `max` on both sides without enlarging. */
+export function fitWithin(width: number, height: number, max: number): { width: number; height: number } {
+  const s = Math.min(1, max / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * s)), height: Math.max(1, Math.round(height * s)) };
+}
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Upload a blob; if that fails for a WebP, re-encode it to the fallback format
  * and try once more. Storage buckets can be limited to particular image types,
- * and the store's own uploads have only ever been PNG.
+ * and the store's own uploads were only ever PNG.
  */
 export async function uploadWithFallback(
   blob: Blob,

@@ -310,7 +310,7 @@ const Checkout = () => {
               <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
                 {item.product.node.images?.edges?.[0]?.node && (
                   <img
-                    src={item.product.node.images.edges[0].node.url}
+                    src={item.product.node.images.edges[0].node.thumbUrl || item.product.node.images.edges[0].node.url}
                     alt={item.product.node.title}
                     className="max-w-full max-h-full object-contain"
                   />

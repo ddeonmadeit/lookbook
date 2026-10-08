@@ -118,7 +118,13 @@ const Index = () => {
           style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}
         >
           {products.map((product, i) => (
-            <ProductCard key={product.node.id} product={product} index={i} displayNumber={creationOrderMap[product.node.handle]} />
+            <ProductCard
+              key={product.node.id}
+              product={product}
+              index={i}
+              displayNumber={creationOrderMap[product.node.handle]}
+              sizes={`${Math.ceil(100 / columns)}vw`}
+            />
           ))}
         </div>
       )}

@@ -111,7 +111,7 @@ export const CartDrawer = () => {
                     <div key={item.variantId} className="flex gap-4 py-4 border-b border-border">
                       <div className="w-20 h-20 bg-background overflow-hidden flex-shrink-0 flex items-center justify-center">
                         {item.product.node.images?.edges?.[0]?.node && (
-                          <img src={item.product.node.images.edges[0].node.url} alt={item.product.node.title} className="max-w-full max-h-full object-contain" />
+                          <img src={item.product.node.images.edges[0].node.thumbUrl || item.product.node.images.edges[0].node.url} alt={item.product.node.title} className="max-w-full max-h-full object-contain" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">

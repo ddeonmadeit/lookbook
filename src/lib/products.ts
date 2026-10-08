@@ -13,6 +13,8 @@ import { ensureSettings } from "@/stores/settingsStore";
 export interface ManualImage {
   url: string;
   altText?: string | null;
+  /** Smaller copy (640px) for grid tiles and thumbnails; absent on older photos. */
+  thumb?: string | null;
 }
 export interface ManualOption {
   name: string;
@@ -85,7 +87,7 @@ export interface StorefrontData {
 function manualRowToProduct(row: ProductRow): ShopifyProduct {
   const currency = row.currency || "USD";
   const images = (row.images || []).map((img) => ({
-    node: { url: img.url, altText: img.altText ?? null },
+    node: { url: img.url, altText: img.altText ?? null, thumbUrl: img.thumb ?? null },
   }));
 
   let variants = row.variants || [];
