@@ -18,6 +18,7 @@ import { type RevisionPart, type RevisionPatch, type Revisions, planRevision, re
 import { type ShopifyImportNode, toImportRow } from "@/lib/shopifyImport";
 import { optimizeImage } from "@/lib/optimizeImage";
 import { downloadImage, storeOptimisedPhoto } from "@/lib/storeImage";
+import { PHONE_SHEET, keepKeyboardClosed } from "./phoneSheet";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -194,7 +195,7 @@ const OptimisePhotosDialog = ({ open, onOpenChange, onUpdated }: OptimisePhotosD
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className={`max-w-2xl max-h-[90vh] overflow-y-auto ${PHONE_SHEET}`} onOpenAutoFocus={keepKeyboardClosed}>
         <DialogHeader>
           <DialogTitle className="font-display text-sm uppercase tracking-[0.15em]">Optimise product photos</DialogTitle>
         </DialogHeader>

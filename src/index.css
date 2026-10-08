@@ -150,6 +150,13 @@
   }
 }
 
+/* Admin dashboard on phones: toasts sit above the bottom tab bar, not on it. */
+@media (max-width: 639px) {
+  html.admin-app [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
 @layer components {
   .logo-bounce {
     animation: logo-float 3s ease-in-out infinite;

@@ -36,6 +36,30 @@ const RouteFallback = () => (
 
 const queryClient = new QueryClient();
 
+/** Point the page's app manifest, home-screen icon and name at the admin app; returns an undo. */
+function applyAdminAppIdentity(): () => void {
+  const base = import.meta.env.BASE_URL;
+  const swaps: Array<() => void> = [];
+  const set = (selector: string, create: () => HTMLElement, attr: string, value: string) => {
+    let el = document.head.querySelector<HTMLElement>(selector);
+    const created = !el;
+    if (!el) {
+      el = create();
+      document.head.appendChild(el);
+    }
+    const before = el.getAttribute(attr);
+    el.setAttribute(attr, value);
+    const node = el;
+    swaps.push(() => (created ? node.remove() : before === null ? node.removeAttribute(attr) : node.setAttribute(attr, before)));
+  };
+  const link = (rel: string) => () => Object.assign(document.createElement("link"), { rel });
+  const meta = (name: string) => () => Object.assign(document.createElement("meta"), { name });
+  set('link[rel="manifest"]', link("manifest"), "href", `${base}admin.webmanifest`);
+  set('link[rel="apple-touch-icon"]', link("apple-touch-icon"), "href", `${base}admin-apple-touch-icon.png`);
+  set('meta[name="apple-mobile-web-app-title"]', meta("apple-mobile-web-app-title"), "content", "KNOTS Admin");
+  return () => swaps.reverse().forEach((undo) => undo());
+}
+
 // While site_mode is "coming_soon", every route except /admin (so the owner
 // can still log in, manage products, and flip the switch) shows the
 // countdown/early-access page instead of the real storefront. A logged-in
@@ -60,6 +84,13 @@ const SiteGate = () => {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isAdminRoute && adminTheme === "dark");
   }, [isAdminRoute, adminTheme]);
+  // Lets admin-only CSS (e.g. toasts clearing the phone tab bar) target the dashboard,
+  // and makes "Add to Home Screen" on an admin page install a separate
+  // "KNOTS Admin" app that opens straight to the dashboard (not the shop).
+  useEffect(() => {
+    document.documentElement.classList.toggle("admin-app", isAdminRoute);
+    if (isAdminRoute) return applyAdminAppIdentity();
+  }, [isAdminRoute]);
 
   if (isGated && !(checked && hasSession)) {
     return <ComingSoon />;
