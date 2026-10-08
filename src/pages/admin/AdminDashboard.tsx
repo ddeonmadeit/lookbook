@@ -69,6 +69,7 @@ import { useSettingsStore, type ProductSource, type SiteMode } from "@/stores/se
 import type { ProductRow } from "@/lib/products";
 import ProductForm from "./ProductForm";
 import ShopifyImportDialog from "./ShopifyImportDialog";
+import RestoredPhotosDialog from "./RestoredPhotosDialog";
 import OverviewTab from "./OverviewTab";
 import CustomersTab from "./CustomersTab";
 import EmailTemplatesTab from "./EmailTemplatesTab";
@@ -291,6 +292,7 @@ const ProductsTab = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = useCallback(async () => {
@@ -367,6 +369,9 @@ const ProductsTab = () => {
     persistOrder(sortByPreset(products, preset));
   };
 
+  // Restored products whose photos still load from the closed Shopify store.
+  const onShopify = products.filter((p) => p.images?.some((img) => img.url.includes("cdn.shopify.com"))).length;
+
   const nextPosition = products.length
     ? Math.max(...products.map((p) => p.position ?? 0)) + 1
     : 1;
@@ -400,6 +405,18 @@ const ProductsTab = () => {
           </Button>
         </div>
       </div>
+
+      {!loading && onShopify > 0 && (
+        <div className="border border-border rounded-md p-3 mb-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <p className="font-body text-[11px] text-muted-foreground">
+            {onShopify} restored product{onShopify !== 1 ? "s" : ""} still load their photos from Shopify's servers, which
+            can delete them at any time. Move them into your storage, with the backgrounds removed from the product shots.
+          </p>
+          <Button size="sm" className="flex-shrink-0" onClick={() => setPhotosOpen(true)}>
+            Update photos
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -451,6 +468,7 @@ const ProductsTab = () => {
       </Dialog>
 
       <ShopifyImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={load} />
+      <RestoredPhotosDialog open={photosOpen} onOpenChange={setPhotosOpen} onUpdated={load} />
     </div>
   );
 };

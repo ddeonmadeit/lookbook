@@ -261,12 +261,3 @@ export function webSizedImageUrl(url: string, maxWidth = 2048): string {
   u.searchParams.set("width", String(maxWidth));
   return u.toString();
 }
-
-/**
- * Object key for an imported image. Deterministic, so re-running an import
- * after a partial failure overwrites the same files instead of piling up
- * copies.
- */
-export function importedImagePath(handle: string, index: number, ext: string): string {
-  return `${storageFolderFor(handle)}/shopify-${index + 1}.${ext}`;
-}
