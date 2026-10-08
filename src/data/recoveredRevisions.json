@@ -1,0 +1,220 @@
+{
+ "the-magnum-opus-leather-jacket": {
+  "note": "Flat-lay photos instead of the 3D renders, and the updated description (January 2026)",
+  "previous": {
+   "images": [
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_59833e53-53d1-473b-8306-b77530566bb4.png?v=1724656198",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_a47b88a5-6a29-43b1-8e2d-4fb1f6791685.png?v=1724656199",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_cfcbd7b1-3408-4e7b-8aea-14e25a6cabef.png?v=1724656200",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_da1424a1-5abb-47c9-a01d-a9247caee11a.png?v=1724656199",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_d82fff61-e23d-40d3-822b-fec7ac32de31.png?v=1724656202",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_362d213f-78e8-41bc-871d-ec03a0eca531.png?v=1724656200"
+   ],
+   "description_html": "<p>1 OF 1<br>Cactus Leather Jacket Designed For Customisation.</p>\n<p> </p>\n<p>STATS:</p>\n<ul>\n<li>Patch-Switch® Technology</li>\n<li>Back Embroidery</li>\n<li>11 Patch Clips</li>\n<li>YKK Silver Zipper</li>\n<li>Custom Zipper Puller</li>\n<li>Fabric Colour Block</li>\n<li>Linen Lining</li>\n<li>Streetwear Fit</li>\n<li>340GSM</li>\n</ul>"
+  }
+ },
+ "crescent-washed-straight-leg-jeans": {
+  "note": "Flat-lay front photo instead of the 3D render (January 2026)",
+  "previous": {
+   "images": [
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_1a7319f1-2bf9-4804-89b6-075330645f3b.png?v=1724656199",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_a9b3f95c-8be7-4baf-965f-2663a896a3e3.png?v=1724656199",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_c5a045c0-f156-4987-85a7-04801fd8ccd7.png?v=1724656199",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/original_baf5dcd4-0698-4661-98e7-f82c05a95aae.png?v=1724656199"
+   ]
+  }
+ },
+ "crescent-raw-denim": {
+  "note": "3 on-model photos added and size L relabelled (November 2025)",
+  "previous": {
+   "images": [
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2246.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2244.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/IMG-2243.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/AA365A6C-B933-4F75-848E-CCC8BDC6CAE6.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/A2767EA6-7149-44F5-BE98-33CD43D8AC35.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/B57F5868-04D8-4E96-97BD-79F8F6F73B6B.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/22799971-9309-4DE2-9DDC-D59FE468D0FD.jpg?v=1759558589",
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/F54DB20A-7DC3-4298-85F9-F0D4EAD6182D.jpg?v=1759558589"
+   ],
+   "sizes": {
+    "options": [
+     {
+      "name": "Color",
+      "values": [
+       "Charcoal",
+       "Navy"
+      ]
+     },
+     {
+      "name": "Size",
+      "values": [
+       "S (28-30)",
+       "M (30-32)",
+       "L (32-34)",
+       "XL (34-36)"
+      ]
+     }
+    ],
+    "variants": [
+     {
+      "id": "crescent-raw-denim::Charcoal/S (28-30)",
+      "price": 170,
+      "stock": null,
+      "title": "Charcoal / S (28-30)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Charcoal"
+       },
+       {
+        "name": "Size",
+        "value": "S (28-30)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Charcoal/M (30-32)",
+      "price": 170,
+      "stock": null,
+      "title": "Charcoal / M (30-32)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Charcoal"
+       },
+       {
+        "name": "Size",
+        "value": "M (30-32)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Charcoal/L (32-34)",
+      "price": 170,
+      "stock": null,
+      "title": "Charcoal / L (32-34)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Charcoal"
+       },
+       {
+        "name": "Size",
+        "value": "L (32-34)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Charcoal/XL (34-36)",
+      "price": 170,
+      "stock": null,
+      "title": "Charcoal / XL (34-36)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Charcoal"
+       },
+       {
+        "name": "Size",
+        "value": "XL (34-36)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Navy/S (28-30)",
+      "price": 170,
+      "stock": null,
+      "title": "Navy / S (28-30)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Navy"
+       },
+       {
+        "name": "Size",
+        "value": "S (28-30)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Navy/M (30-32)",
+      "price": 170,
+      "stock": null,
+      "title": "Navy / M (30-32)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Navy"
+       },
+       {
+        "name": "Size",
+        "value": "M (30-32)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Navy/L (32-34)",
+      "price": 170,
+      "stock": null,
+      "title": "Navy / L (32-34)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Navy"
+       },
+       {
+        "name": "Size",
+        "value": "L (32-34)"
+       }
+      ]
+     },
+     {
+      "id": "crescent-raw-denim::Navy/XL (34-36)",
+      "price": 170,
+      "stock": null,
+      "title": "Navy / XL (34-36)",
+      "available": true,
+      "selectedOptions": [
+       {
+        "name": "Color",
+        "value": "Navy"
+       },
+       {
+        "name": "Size",
+        "value": "XL (34-36)"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ "untitled-oct1_21-14": {
+  "note": "3 more photos, sizes S–XL, the full description and its 5 kg shipping weight",
+  "previous": {
+   "images": [
+    "https://cdn.shopify.com/s/files/1/0596/8343/8628/files/New_Project.png"
+   ],
+   "description_html": null,
+   "sizes": {
+    "options": [],
+    "variants": []
+   },
+   "weight_grams": 0
+  }
+ },
+ "camo-mohair-sweater": {
+  "note": "Pre-order note removed from the description",
+  "previous": {
+   "description_html": "<meta charset=\"utf-8\">\n<p>Our mohair sweaters are soft, breathable, and naturally insulating — hand-finished for a textured, elevated feel. <br>Made for comfort, built to last.<br><br><strong>STATS<br></strong>• Signature Ripple® Pattern</p>\n<meta charset=\"utf-8\">\n<p>• Sustainably Sourced Mohair</p>\n<p>[THIS IS A PREORDER] </p>\n<p>Order will arrive within 2-4 weeks depending on location </p>\n<meta charset=\"utf-8\">\n<p> </p>\n<p> </p>"
+  }
+ }
+}

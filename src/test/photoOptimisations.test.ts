@@ -36,9 +36,10 @@ describe("staged photo copies", () => {
     }
   });
 
-  it("removed the background from exactly the 89 product shots, all transparent", () => {
-    const cutouts = Object.values(photos).filter((p) => p.cutout);
-    expect(cutouts).toHaveLength(89);
+  it("removed the background from exactly the 92 product shots, all transparent", () => {
+    // distinct files: a photo Shopify re-stamped has two URLs for one staged copy
+    const cutouts = [...new Map(Object.values(photos).filter((p) => p.cutout).map((p) => [p.full, p])).values()];
+    expect(cutouts).toHaveLength(92);
     expect(cutouts.every((p) => p.alpha)).toBe(true);
   });
 
