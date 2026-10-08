@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   imageExtension,
-  importedImagePath,
   planImport,
   storageFolderFor,
   toImportRow,
@@ -198,11 +197,6 @@ describe("image storage paths", () => {
     expect(storageFolderFor("the-shoodie®")).toBe("the-shoodie");
     expect(storageFolderFor("Flared 1:1 Jeans")).toBe("flared-1-1-jeans");
     expect(storageFolderFor("®®")).toBe("product");
-  });
-
-  it("is deterministic so a re-run overwrites instead of duplicating", () => {
-    expect(importedImagePath("palm-hoodie", 0, "jpg")).toBe("palm-hoodie/shopify-1.jpg");
-    expect(importedImagePath("palm-hoodie", 0, "jpg")).toBe(importedImagePath("palm-hoodie", 0, "jpg"));
   });
 
   it("picks the extension from the content type, then the URL", () => {

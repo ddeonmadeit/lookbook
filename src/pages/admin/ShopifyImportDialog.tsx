@@ -9,8 +9,6 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { SHOPIFY_HANDLE_ORDER, type ProductRow } from "@/lib/products";
 import {
-  imageExtension,
-  importedImagePath,
   planImport,
   webSizedImageUrl,
   withPositions,
@@ -18,6 +16,7 @@ import {
   type ImportRow,
   type ShopifyImportNode,
 } from "@/lib/shopifyImport";
+import { downloadImage, storeProductImage } from "@/lib/storeImage";
 
 /**
  * The old Shopify catalogue, recovered from Common Crawl's archived copies of
@@ -43,25 +42,16 @@ async function loadExistingProducts(): Promise<ProductRow[]> {
 /**
  * Copy one Shopify image into our own storage bucket so it survives Shopify
  * deleting the closed store's files. Copies the web-sized WebP version rather
- * than the multi-megabyte original. Falls back to the Shopify URL if the copy
- * fails.
+ * than the multi-megabyte original. Falls back to the Shopify URL (and says
+ * why) if the copy fails.
  */
-async function copyImage(url: string, handle: string, index: number): Promise<{ url: string; copied: boolean }> {
+async function copyImage(url: string, handle: string, index: number): Promise<{ url: string; error?: string }> {
   try {
-    const res = await fetch(webSizedImageUrl(url), { headers: { Accept: "image/webp,*/*" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const ext = imageExtension(res.headers.get("content-type") || blob.type, url);
-    const path = importedImagePath(handle, index, ext);
-    const { error } = await supabase.storage.from("product-images").upload(path, blob, {
-      cacheControl: "3600",
-      upsert: true,
-      contentType: blob.type || undefined,
-    });
-    if (error) throw error;
-    return { url: supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl, copied: true };
-  } catch {
-    return { url, copied: false };
+    const blob = await downloadImage(webSizedImageUrl(url), true);
+    const fallback = /\.png$/i.test(new URL(url).pathname) ? "image/png" : "image/jpeg";
+    return { url: await storeProductImage(blob, handle, index, fallback) };
+  } catch (err) {
+    return { url, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -94,6 +84,8 @@ interface Summary {
   skipped: number;
   failed: Array<{ title: string; error: string }>;
   imagesLeftOnShopify: number;
+  /** Storage's message for the first image that couldn't be copied. */
+  imageError: string | null;
 }
 
 type Phase =
@@ -151,13 +143,14 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
   const runImport = async () => {
     const chosen = candidates.filter((c) => c.status !== "exists" && selected.has(c.row.handle)).map((c) => c.row);
     const rows = withPositions(chosen, nextPosition);
-    const summary: Summary = { imported: 0, skipped: 0, failed: [], imagesLeftOnShopify: 0 };
+    const summary: Summary = { imported: 0, skipped: 0, failed: [], imagesLeftOnShopify: 0, imageError: null };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       setPhase({ kind: "importing", done: i, total: rows.length, current: row.title });
       const copies = await Promise.all(row.images.map((img, idx) => copyImage(img.url, row.handle, idx)));
-      summary.imagesLeftOnShopify += copies.filter((c) => !c.copied).length;
+      summary.imagesLeftOnShopify += copies.filter((c) => c.error).length;
+      summary.imageError ??= copies.find((c) => c.error)?.error ?? null;
       const images = row.images.map((img, idx) => ({ ...img, url: copies[idx].url }));
 
       const outcome = await insertProduct({ ...row, images });
@@ -309,8 +302,8 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
             {phase.summary.imagesLeftOnShopify > 0 && (
               <p className="font-body text-[11px] text-muted-foreground">
                 {phase.summary.imagesLeftOnShopify} image{phase.summary.imagesLeftOnShopify !== 1 ? "s" : ""} couldn't be
-                copied and still load from Shopify's servers, which may stop serving them. Re-upload them from each
-                product's edit screen.
+                copied and still load from Shopify's servers, which may stop serving them.
+                {phase.summary.imageError && ` Storage said: “${phase.summary.imageError}”.`}
               </p>
             )}
             {phase.summary.failed.length > 0 && (
