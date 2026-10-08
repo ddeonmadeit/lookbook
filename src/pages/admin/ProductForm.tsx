@@ -77,9 +77,11 @@ interface ProductFormProps {
   nextPosition: number;
   onSaved: () => void;
   onCancel: () => void;
+  /** Offered when editing an existing product. */
+  onDelete?: () => void;
 }
 
-const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormProps) => {
+const ProductForm = ({ product, nextPosition, onSaved, onCancel, onDelete }: ProductFormProps) => {
   const [title, setTitle] = useState(product?.title ?? "");
   const [handle, setHandle] = useState(product?.handle ?? "");
   const [handleEdited, setHandleEdited] = useState(!!product);
@@ -119,15 +121,19 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    // Several at once, e.g. a whole shoot picked from the phone's photo library.
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     setUploading(true);
     try {
-      // Store a fast-loading copy (≤1500px, WebP where the browser can make one)
-      // and a small one for grid tiles, never the multi-megabyte original.
-      const { full, thumb, fallbackType } = await optimizeImage(file);
-      const stored = await storeOptimisedPhoto(full, thumb, handle || slugify(title) || "product", images.length, fallbackType);
-      setImages((prev) => [...prev, { url: stored.url, altText: title, thumb: stored.thumb }]);
+      for (const [i, file] of files.entries()) {
+        // Store a fast-loading copy (≤1500px, WebP where the browser can make one)
+        // and a small one for grid tiles, never the multi-megabyte original.
+        const { full, thumb, fallbackType } = await optimizeImage(file);
+        const folder = handle || slugify(title) || "product";
+        const stored = await storeOptimisedPhoto(full, thumb, folder, images.length + i, fallbackType);
+        setImages((prev) => [...prev, { url: stored.url, altText: title, thumb: stored.thumb }]);
+      }
     } catch (err) {
       toast.error("Upload failed", { description: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -284,14 +290,15 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((img, idx) => (
-              <div key={idx} className="relative w-16 h-16 border border-border flex items-center justify-center">
+              <div key={idx} className="relative w-16 h-16 max-sm:w-[76px] max-sm:h-[76px] border border-border flex items-center justify-center">
                 <img src={img.thumb || img.url} alt={img.altText ?? ""} className="max-w-full max-h-full object-contain" />
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
-                  className="absolute -top-2 -right-2 bg-background border border-border rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Remove photo"
+                  className="absolute -top-2 -right-2 bg-background border border-border rounded-full p-0.5 max-sm:p-1.5 text-muted-foreground hover:text-foreground"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3 h-3 max-sm:w-3.5 max-sm:h-3.5" />
                 </button>
               </div>
             ))}
@@ -317,6 +324,7 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
           <input
             type="file"
             accept="image/*"
+            multiple
             id="image-upload"
             className="hidden"
             onChange={handleFileUpload}
@@ -329,7 +337,7 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
             className="text-[11px]"
           >
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-            Upload file
+            Upload photos
           </Button>
         </div>
       </div>
@@ -408,9 +416,25 @@ const ProductForm = ({ product, nextPosition, onSaved, onCancel }: ProductFormPr
         })()}
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button type="button" onClick={handleSave} disabled={saving}>
+      {/* Stays in reach at the bottom while scrolling a long form. */}
+      <div className="sticky bottom-0 -mx-6 -mb-6 max-sm:-mx-4 max-sm:-mb-[calc(env(safe-area-inset-bottom)+16px)] px-6 max-sm:px-4 py-3 max-sm:pb-[calc(env(safe-area-inset-bottom)+12px)] bg-background border-t border-border flex items-center gap-2">
+        {onDelete && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onDelete}
+            aria-label="Delete product"
+            className="text-destructive hover:text-destructive px-2 max-sm:h-11"
+          >
+            <Trash2 className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </Button>
+        )}
+        <div className="flex-1" />
+        <Button type="button" variant="outline" onClick={onCancel} className="max-sm:h-11">
+          Cancel
+        </Button>
+        <Button type="button" onClick={handleSave} disabled={saving} className="max-sm:h-11 max-sm:flex-1 max-sm:max-w-[200px]">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : product ? "Save changes" : "Add product"}
         </Button>
       </div>

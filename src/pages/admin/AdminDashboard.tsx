@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ import {
   Truck,
   RotateCcw,
   Import,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -75,6 +76,11 @@ import OverviewTab from "./OverviewTab";
 import CustomersTab from "./CustomersTab";
 import EmailTemplatesTab from "./EmailTemplatesTab";
 import { useAdminThemeStore } from "@/stores/adminThemeStore";
+import { usePullToRefresh, PULL_THRESHOLD } from "@/hooks/usePullToRefresh";
+import { useMediaQuery, PHONE } from "@/hooks/useMediaQuery";
+import { PHONE_SHEET, keepKeyboardClosed } from "./phoneSheet";
+import { BottomTabBar, MoreDrawer } from "./AdminMobileNav";
+import { ADMIN_TABS, type AdminTab, readStoredTab, storeTab } from "./adminTabs";
 
 interface OrderRow {
   id: string;
@@ -113,21 +119,55 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const theme = useAdminThemeStore((s) => s.theme);
   const toggleTheme = useAdminThemeStore((s) => s.toggle);
+  const [tab, setTab] = useState<AdminTab>(readStoredTab);
+  const [moreOpen, setMoreOpen] = useState(false);
+  // Bumped to remount the open section, which reloads its data.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [toFulfil, setToFulfil] = useState(0);
+  const scrollRef = useRef<HTMLElement>(null);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/admin/login", { replace: true });
   };
 
+  const selectTab = (next: string) => {
+    const t = next as AdminTab;
+    if (t === tab) {
+      // Tapping the open tab again scrolls back to the top, like a native app.
+      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setTab(t);
+    storeTab(t);
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
+
+  // Paid orders still waiting to ship: shown as a badge on Orders.
+  const loadBadges = useCallback(async () => {
+    const { count } = await supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "paid");
+    setToFulfil(count ?? 0);
+  }, []);
+  useEffect(() => {
+    loadBadges();
+  }, [loadBadges, tab, refreshKey]);
+
+  const { pull, refreshing } = usePullToRefresh(scrollRef, () => setRefreshKey((k) => k + 1));
+  const badges = { orders: toFulfil };
+  const label = ADMIN_TABS.find((t) => t.value === tab)?.label ?? "";
+
   return (
-    <div className="h-full overflow-y-auto bg-background">
-      <header className="border-b border-border px-3 sm:px-6 py-4 flex items-center justify-between gap-2">
-        <h1 className="font-display text-sm uppercase tracking-[0.2em] flex-shrink-0">Store Dashboard</h1>
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-          <Button variant="outline" size="sm" asChild className="text-[11px] uppercase tracking-[0.1em] px-2 sm:px-3">
-            <a href={import.meta.env.BASE_URL} target="_blank" rel="noopener noreferrer" aria-label="Preview live site">
-              <ExternalLink className="w-3.5 h-3.5 sm:mr-2" />
-              <span className="hidden sm:inline">Preview live site</span>
+    <div className="h-full flex flex-col bg-background">
+      <header className="flex-shrink-0 border-b border-border px-4 sm:px-6 h-14 sm:h-auto sm:py-4 flex items-center justify-between gap-2 bg-background">
+        <h1 className="font-display text-sm uppercase tracking-[0.2em] truncate">
+          <span className="sm:hidden">{label}</span>
+          <span className="hidden sm:inline">Store Dashboard</span>
+        </h1>
+        <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" asChild className="text-[11px] uppercase tracking-[0.1em]">
+            <a href={import.meta.env.BASE_URL} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="w-3.5 h-3.5 mr-2" />
+              Preview live site
             </a>
           </Button>
           <Button
@@ -138,50 +178,82 @@ const AdminDashboard = () => {
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em] px-2 sm:px-3" aria-label="Sign out">
-            <LogOut className="w-3.5 h-3.5 sm:mr-2" />
-            <span className="hidden sm:inline">Sign out</span>
+          <Button variant="outline" size="sm" onClick={handleSignOut} className="text-[11px] uppercase tracking-[0.1em]">
+            <LogOut className="w-3.5 h-3.5 mr-2" />
+            Sign out
           </Button>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <Tabs defaultValue="overview">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-6">
-            <TabsList className="w-max">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="products">Products</TabsTrigger>
-              <TabsTrigger value="orders">Orders</TabsTrigger>
-              <TabsTrigger value="customers">Customers</TabsTrigger>
-              <TabsTrigger value="signups">Early Access</TabsTrigger>
-              <TabsTrigger value="reminders">Reminders</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-            </TabsList>
-          </div>
+      <main ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain relative">
+        {/* Pull-to-refresh indicator (phones) */}
+        <div
+          aria-hidden={!refreshing}
+          className="sm:hidden absolute inset-x-0 top-0 flex justify-center pointer-events-none"
+          style={{ height: pull, opacity: Math.min(1, pull / PULL_THRESHOLD) }}
+        >
+          <RefreshCw
+            className={`w-5 h-5 mt-3 text-muted-foreground ${refreshing ? "animate-spin" : ""}`}
+            style={refreshing ? undefined : { transform: `rotate(${(pull / PULL_THRESHOLD) * 270}deg)` }}
+          />
+        </div>
+        <div
+          className="max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:py-8 pb-[calc(88px+env(safe-area-inset-bottom))] sm:pb-8"
+          // A margin, not a transform: a transform would re-anchor fixed children (the add button) while pulling.
+          style={pull ? { marginTop: pull } : undefined}
+        >
+          <Tabs value={tab} onValueChange={selectTab}>
+            <div className="hidden sm:block mb-6">
+              <TabsList className="w-max">
+                {ADMIN_TABS.map((t) => (
+                  <TabsTrigger key={t.value} value={t.value}>
+                    {t.label}
+                    {(badges[t.value as keyof typeof badges] ?? 0) > 0 && (
+                      <span className="ml-1.5 min-w-[16px] h-4 px-1 rounded-full bg-foreground text-background text-[10px] leading-4">
+                        {badges[t.value as keyof typeof badges]}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
 
-          <TabsContent value="overview">
-            <OverviewTab />
-          </TabsContent>
-          <TabsContent value="products">
-            <ProductsTab />
-          </TabsContent>
-          <TabsContent value="orders">
-            <OrdersTab />
-          </TabsContent>
-          <TabsContent value="customers">
-            <CustomersTab />
-          </TabsContent>
-          <TabsContent value="signups">
-            <SignupsTab />
-          </TabsContent>
-          <TabsContent value="reminders">
-            <RemindersTab />
-          </TabsContent>
-          <TabsContent value="settings">
-            <SettingsTab />
-          </TabsContent>
-        </Tabs>
-      </div>
+            <TabsContent value="overview" key={`overview-${refreshKey}`}>
+              <OverviewTab />
+            </TabsContent>
+            <TabsContent value="products" key={`products-${refreshKey}`}>
+              <ProductsTab />
+            </TabsContent>
+            <TabsContent value="orders" key={`orders-${refreshKey}`}>
+              <OrdersTab onChanged={loadBadges} />
+            </TabsContent>
+            <TabsContent value="customers" key={`customers-${refreshKey}`}>
+              <CustomersTab />
+            </TabsContent>
+            <TabsContent value="signups" key={`signups-${refreshKey}`}>
+              <SignupsTab />
+            </TabsContent>
+            <TabsContent value="reminders" key={`reminders-${refreshKey}`}>
+              <RemindersTab />
+            </TabsContent>
+            <TabsContent value="settings" key={`settings-${refreshKey}`}>
+              <SettingsTab />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </main>
+
+      <BottomTabBar tab={tab} onSelect={selectTab} onMore={() => setMoreOpen(true)} badges={badges} />
+      <MoreDrawer
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        tab={tab}
+        onSelect={selectTab}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onSignOut={handleSignOut}
+        badges={badges}
+      />
     </div>
   );
 };
@@ -255,7 +327,12 @@ const SortableProductRow = ({
       <TableCell>
         <div className="w-10 h-10 flex items-center justify-center">
           {product.images?.[0]?.url && (
-            <img src={product.images[0].url} alt={product.title} className="max-w-full max-h-full object-contain" />
+            <img
+              src={product.images[0].thumb || product.images[0].url}
+              alt={product.title}
+              loading="lazy"
+              className="max-w-full max-h-full object-contain"
+            />
           )}
         </div>
       </TableCell>
@@ -287,6 +364,54 @@ const SortableProductRow = ({
   );
 };
 
+/** Phone row: tap anywhere to edit, drag the handle to reorder. */
+const SortableProductCard = ({ product, onEdit }: { product: ProductRow; onEdit: (p: ProductRow) => void }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
+  const image = product.images?.[0];
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`flex items-center bg-background ${isDragging ? "relative z-10 shadow-lg" : ""}`}
+    >
+      <button
+        type="button"
+        onClick={() => onEdit(product)}
+        className="flex flex-1 min-w-0 items-center gap-3 pl-3 py-2.5 text-left active:bg-muted transition-colors"
+      >
+        <span className="w-14 h-14 flex-shrink-0 rounded-md bg-muted/40 flex items-center justify-center overflow-hidden">
+          {image?.url && (
+            <img src={image.thumb || image.url} alt="" loading="lazy" className="max-w-full max-h-full object-contain" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-body text-[14px] leading-snug line-clamp-2">{product.title}</span>
+          <span className="block font-body text-[12px] text-muted-foreground mt-0.5">
+            {product.currency} {Number(product.price).toFixed(0)}
+            {product.sort_order ? ` · #${String(product.sort_order).padStart(3, "0")}` : ""}
+          </span>
+        </span>
+        <span
+          className={`flex-shrink-0 font-body text-[11px] px-2 py-0.5 rounded-full border ${
+            product.available ? "border-transparent bg-secondary text-secondary-foreground" : "border-border text-muted-foreground"
+          }`}
+        >
+          {product.available ? "In stock" : "Sold out"}
+        </span>
+      </button>
+      <button
+        type="button"
+        className="self-stretch px-3 flex items-center cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+        aria-label={`Drag to reorder ${product.title}`}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="w-5 h-5" />
+      </button>
+    </li>
+  );
+};
+
 const ProductsTab = () => {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -294,6 +419,7 @@ const ProductsTab = () => {
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const phone = useMediaQuery(PHONE);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const load = useCallback(async () => {
@@ -330,15 +456,17 @@ const ProductsTab = () => {
     setDialogOpen(true);
   };
 
+  /** Returns whether it was deleted. */
   const handleDelete = async (p: ProductRow) => {
-    if (!confirm(`Delete "${p.title}"?`)) return;
+    if (!confirm(`Delete "${p.title}"?`)) return false;
     const { error } = await supabase.from("products").delete().eq("id", p.id);
     if (error) {
       toast.error("Delete failed", { description: error.message });
-      return;
+      return false;
     }
     toast.success("Product deleted");
     load();
+    return true;
   };
 
   const onSaved = () => {
@@ -380,7 +508,8 @@ const ProductsTab = () => {
     : 1;
 
   return (
-    <div>
+    // Phone: room at the end so the last product can scroll clear of the add button.
+    <div className="max-sm:pb-16">
       <div className="flex justify-between items-center mb-4 gap-2">
         <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
           {products.length} product{products.length !== 1 ? "s" : ""}
@@ -388,22 +517,36 @@ const ProductsTab = () => {
         <div className="flex gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="text-[11px]" disabled={products.length < 2}>
-                <ArrowUpDown className="w-3.5 h-3.5 mr-1.5" /> Sort by
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-[11px] max-sm:h-10 max-sm:w-10 max-sm:p-0"
+                disabled={products.length < 2}
+                aria-label="Sort by"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 sm:mr-1.5 max-sm:w-4 max-sm:h-4" />
+                <span className="hidden sm:inline">Sort by</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {SORT_PRESETS.map((preset) => (
-                <DropdownMenuItem key={preset.value} onClick={() => applyPreset(preset.value)}>
+                <DropdownMenuItem key={preset.value} onClick={() => applyPreset(preset.value)} className="max-sm:min-h-11">
                   {preset.label}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="outline" size="sm" className="text-[11px]" onClick={() => setImportOpen(true)}>
-            <Import className="w-3.5 h-3.5 mr-1.5" /> Restore old products
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[11px] max-sm:h-10 max-sm:w-10 max-sm:p-0"
+            onClick={() => setImportOpen(true)}
+            aria-label="Restore old products"
+          >
+            <Import className="w-3.5 h-3.5 sm:mr-1.5 max-sm:w-4 max-sm:h-4" />
+            <span className="hidden sm:inline">Restore old products</span>
           </Button>
-          <Button size="sm" onClick={openAdd}>
+          <Button size="sm" onClick={openAdd} className="hidden sm:inline-flex">
             <Plus className="w-4 h-4 mr-1" /> Add product
           </Button>
         </div>
@@ -431,6 +574,16 @@ const ProductsTab = () => {
           No products yet. Click “Add product” to create your first one, or “Restore old products” to bring back
           your old Shopify catalogue.
         </p>
+      ) : phone ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={products.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+            <ul className="-mx-4 border-y border-border divide-y divide-border">
+              {products.map((p) => (
+                <SortableProductCard key={p.id} product={p} onEdit={openEdit} />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       ) : (
         <div className="border border-border rounded-md overflow-hidden">
           <Table>
@@ -457,17 +610,41 @@ const ProductsTab = () => {
         </div>
       )}
       <p className="font-body text-[10px] text-muted-foreground mt-2">
-        Drag the handle to reorder the storefront grid, or use "Sort by" for a one-click layout.
+        {phone
+          ? "Tap a product to edit it. Drag the handle to reorder the shop grid."
+          : 'Drag the handle to reorder the storefront grid, or use "Sort by" for a one-click layout.'}
       </p>
 
+      {/* Phone: add button floating above the tab bar */}
+      <button
+        type="button"
+        onClick={openAdd}
+        aria-label="Add product"
+        className="sm:hidden fixed right-4 bottom-[calc(72px+env(safe-area-inset-bottom))] z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={`max-w-2xl max-h-[90vh] overflow-y-auto ${PHONE_SHEET}`} onOpenAutoFocus={keepKeyboardClosed}>
           <DialogHeader>
             <DialogTitle className="font-display text-sm uppercase tracking-[0.15em]">
               {editing ? "Edit product" : "Add product"}
             </DialogTitle>
           </DialogHeader>
-          <ProductForm product={editing} nextPosition={nextPosition} onSaved={onSaved} onCancel={() => setDialogOpen(false)} />
+          <ProductForm
+            product={editing}
+            nextPosition={nextPosition}
+            onSaved={onSaved}
+            onCancel={() => setDialogOpen(false)}
+            onDelete={
+              editing
+                ? async () => {
+                    if (await handleDelete(editing)) setDialogOpen(false);
+                  }
+                : undefined
+            }
+          />
         </DialogContent>
       </Dialog>
 
@@ -489,7 +666,8 @@ function orderMoney(currency: string, amount: number) {
   return `${currency} ${(Number(amount) || 0).toFixed(2)}`;
 }
 
-const OrdersTab = () => {
+/** `onChanged` runs after an order's status changes (keeps the tab badge current). */
+const OrdersTab = ({ onChanged }: { onChanged?: () => void }) => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -519,6 +697,7 @@ const OrdersTab = () => {
       toast.error("Could not update order", { description: error.message });
       return false;
     }
+    onChanged?.();
     return true;
   };
 
@@ -572,6 +751,7 @@ const OrdersTab = () => {
         ),
       );
 
+      onChanged?.();
       const n = result.notification;
       const sent = [n?.email === "sent" && "email", n?.sms === "sent" && "SMS"].filter(Boolean);
       toast.success("Marked as fulfilled", {
@@ -697,28 +877,42 @@ const OrdersTab = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="flex gap-2 items-center">
         <Input
+          type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search name, email, tracking, item…"
-          className="h-9 flex-1 min-w-[180px] text-[12px]"
+          className="h-9 max-sm:h-11 flex-1 min-w-0 text-[12px] max-sm:text-[15px]"
         />
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-[130px] text-[11px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="text-[12px]">All statuses</SelectItem>
-            {ORDER_STATUSES.map((s) => (
-              <SelectItem key={s} value={s} className="text-[12px]">{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button size="sm" variant="outline" onClick={handleExport} className="h-9">
+        <Button size="sm" variant="outline" onClick={handleExport} className="h-9 max-sm:h-11 max-sm:w-11 max-sm:p-0" aria-label="Export CSV">
           <Download className="w-4 h-4 sm:mr-1" />
           <span className="hidden sm:inline">Export</span>
         </Button>
+      </div>
+
+      {/* Status filter: one tap, with counts, scrolls sideways on narrow screens */}
+      <div className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-2 w-max">
+          {(["all", ...ORDER_STATUSES] as const).map((st) => {
+            const n = st === "all" ? orders.length : orders.filter((o) => o.status === st).length;
+            const active = statusFilter === st;
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                aria-pressed={active}
+                className={`h-8 max-sm:h-9 px-3 rounded-full border font-body text-[11px] max-sm:text-[12px] capitalize whitespace-nowrap transition-colors ${
+                  active ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground active:bg-muted"
+                }`}
+              >
+                {st === "all" ? "All" : st}
+                <span className={active ? "opacity-70" : "opacity-60"}> {n}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <p className="font-body text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
@@ -781,10 +975,20 @@ const OrderCard = ({
     <div className="border border-border rounded-md p-4">
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
-          <p className="font-body text-[12px] font-medium truncate">{o.customer_name}</p>
-          <p className="font-body text-[11px] text-muted-foreground truncate">{o.customer_email}</p>
+          <p className="font-body text-[12px] max-sm:text-[14px] font-medium truncate">{o.customer_name}</p>
+          <a
+            href={`mailto:${o.customer_email}`}
+            className="block font-body text-[11px] max-sm:text-[12px] max-sm:py-0.5 text-muted-foreground truncate underline-offset-2 hover:underline"
+          >
+            {o.customer_email}
+          </a>
           {o.customer_phone && (
-            <p className="font-body text-[11px] text-muted-foreground">{o.customer_phone}</p>
+            <a
+              href={`tel:${o.customer_phone.replace(/\s+/g, "")}`}
+              className="block font-body text-[11px] max-sm:text-[12px] max-sm:py-0.5 text-muted-foreground underline-offset-2 hover:underline"
+            >
+              {o.customer_phone}
+            </a>
           )}
         </div>
         <div className="text-right flex-shrink-0">
@@ -804,7 +1008,7 @@ const OrderCard = ({
           </p>
           <div className="mt-1 flex justify-end">
             <Select value={o.status} onValueChange={(v) => onStatus(o.id, v)}>
-              <SelectTrigger className="h-7 w-[110px] text-[11px]">
+              <SelectTrigger className="h-7 max-sm:h-9 w-[110px] text-[11px] capitalize" aria-label="Order status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -847,7 +1051,7 @@ const OrderCard = ({
       <div className="mt-3 border-t border-border pt-3 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={carrier} onValueChange={setCarrier}>
-            <SelectTrigger className="h-8 w-[140px] text-[11px]">
+            <SelectTrigger className="h-8 max-sm:h-11 w-[140px] max-sm:w-full text-[11px]" aria-label="Carrier">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -860,7 +1064,7 @@ const OrderCard = ({
             value={tracking}
             onChange={(e) => setTracking(e.target.value)}
             placeholder="Tracking number (optional)"
-            className="h-8 flex-1 min-w-[140px] text-[12px]"
+            className="h-8 max-sm:h-11 flex-1 min-w-[140px] text-[12px]"
           />
           {dirty && (
             <Button
@@ -878,7 +1082,7 @@ const OrderCard = ({
         <div className="flex flex-wrap items-center gap-3">
           <Button
             size="sm"
-            className="h-8 text-[11px]"
+            className="h-8 max-sm:h-11 max-sm:w-full text-[11px] max-sm:text-[12px]"
             disabled={busy || o.status === "cancelled" || o.status === "refunded"}
             onClick={() => onFulfil(o, tracking, carrier, { email: notifyEmail, sms: notifySms })}
           >
@@ -889,22 +1093,22 @@ const OrderCard = ({
             )}
             {o.status === "fulfilled" ? "Resend & update" : "Mark as fulfilled"}
           </Button>
-          <label className="flex items-center gap-1.5 font-body text-[11px] text-muted-foreground cursor-pointer">
+          <label className="flex items-center gap-1.5 max-sm:gap-2 max-sm:min-h-[40px] font-body text-[11px] max-sm:text-[13px] text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={notifyEmail}
               onChange={(e) => setNotifyEmail(e.target.checked)}
-              className="accent-current"
+              className="accent-current max-sm:w-5 max-sm:h-5"
             />
             Email
           </label>
-          <label className="flex items-center gap-1.5 font-body text-[11px] text-muted-foreground cursor-pointer">
+          <label className="flex items-center gap-1.5 max-sm:gap-2 max-sm:min-h-[40px] font-body text-[11px] max-sm:text-[13px] text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={notifySms}
               onChange={(e) => setNotifySms(e.target.checked)}
               disabled={!o.customer_phone}
-              className="accent-current"
+              className="accent-current max-sm:w-5 max-sm:h-5"
             />
             Text{!o.customer_phone ? " (no number)" : ""}
           </label>
@@ -912,12 +1116,12 @@ const OrderCard = ({
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 text-[11px] text-muted-foreground ml-auto"
+              className="h-8 max-sm:h-10 text-[11px] max-sm:text-[12px] text-muted-foreground ml-auto"
               disabled={busy}
               onClick={() => onRefund(o)}
             >
-              <RotateCcw className="w-3.5 h-3.5 sm:mr-1" />
-              <span className="hidden sm:inline">Refund</span>
+              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              Refund
             </Button>
           )}
         </div>

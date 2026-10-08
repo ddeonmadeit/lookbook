@@ -17,6 +17,7 @@ import {
 } from "@/lib/shopifyImport";
 import { downloadImage, storeOptimisedPhoto } from "@/lib/storeImage";
 import { type FallbackType, type MediaMap, type PhotoMap, rewriteDescription } from "@/lib/photoUpdates";
+import { PHONE_SHEET, keepKeyboardClosed } from "./phoneSheet";
 
 /**
  * The old Shopify catalogue, recovered from Common Crawl's archived copies of
@@ -210,7 +211,7 @@ const ShopifyImportDialog = ({ open, onOpenChange, onImported }: ShopifyImportDi
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className={`max-w-2xl max-h-[90vh] overflow-y-auto ${PHONE_SHEET}`} onOpenAutoFocus={keepKeyboardClosed}>
         <DialogHeader>
           <DialogTitle className="font-display text-sm uppercase tracking-[0.15em]">Restore old products</DialogTitle>
         </DialogHeader>

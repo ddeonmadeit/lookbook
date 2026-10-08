@@ -38,6 +38,8 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,gif,woff2}"],
+        // The admin app's icons are only needed by the owner; don't make every shopper download them.
+        globIgnores: ["**/admin-*.png"],
         skipWaiting: true,
         clientsClaim: true,
       },
