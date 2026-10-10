@@ -34,7 +34,8 @@ describe("staged photo copies", () => {
       expect(full.alpha, url).toBe(p.alpha);
       expect(thumb.alpha, url).toBe(p.alpha);
     }
-  });
+    // Reads ~500 image files: a few seconds on a cold disk, over the default 5s limit.
+  }, 30_000);
 
   it("removed the background from exactly the 92 product shots, all transparent", () => {
     // distinct files: a photo Shopify re-stamped has two URLs for one staged copy

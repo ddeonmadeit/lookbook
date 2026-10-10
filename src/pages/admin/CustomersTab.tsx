@@ -12,6 +12,7 @@ import {
 import { Loader2, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import ContactsPanel from "./ContactsPanel";
 
 /** One person, aggregated from every order they've placed. */
 interface CustomerRow {
@@ -87,6 +88,7 @@ const CustomersTab = () => {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("spent");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [view, setView] = useState<"contacts" | "buyers">("contacts");
 
   const load = useCallback(async () => {
     const [customerRes, leadRes, orderRes] = await Promise.all([
@@ -214,7 +216,7 @@ const CustomersTab = () => {
 
   const stat = "font-body text-[10px] uppercase tracking-[0.12em] text-muted-foreground";
 
-  return (
+  const buyersView = (
     <div className="space-y-5">
       {/* Headline numbers */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -359,6 +361,12 @@ const CustomersTab = () => {
         </div>
       )}
 
+    </div>
+  );
+
+  // Shown only until contacts are set up; afterwards these people are in the contacts list.
+  const leadsSection = (
+    <div className="space-y-0">
       {/* Leads — people who left a number but haven't ordered. */}
       <div className="pt-4 border-t border-border">
         <p className="font-body text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -398,6 +406,25 @@ const CustomersTab = () => {
           )}
         </div>
       </div>
+    </div>
+  );
+
+  const switchClass = (active: boolean) =>
+    `flex-1 sm:flex-none px-4 h-9 max-sm:h-10 rounded font-body text-[12px] transition-colors ${
+      active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+    }`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex sm:inline-flex w-full sm:w-auto rounded-md bg-muted p-1 gap-1">
+        <button type="button" aria-pressed={view === "contacts"} onClick={() => setView("contacts")} className={switchClass(view === "contacts")}>
+          All contacts
+        </button>
+        <button type="button" aria-pressed={view === "buyers"} onClick={() => setView("buyers")} className={switchClass(view === "buyers")}>
+          Buyers ({customers.length})
+        </button>
+      </div>
+      {view === "contacts" ? <ContactsPanel fallback={leadsSection} /> : buyersView}
     </div>
   );
 };
