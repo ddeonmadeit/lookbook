@@ -77,6 +77,7 @@ import CustomersTab from "./CustomersTab";
 import EmailTemplatesTab from "./EmailTemplatesTab";
 import { useAdminThemeStore } from "@/stores/adminThemeStore";
 import { usePullToRefresh, PULL_THRESHOLD } from "@/hooks/usePullToRefresh";
+import { useAppUpdates } from "@/hooks/useAppUpdates";
 import { useMediaQuery, PHONE } from "@/hooks/useMediaQuery";
 import { PHONE_SHEET, keepKeyboardClosed } from "./phoneSheet";
 import { BottomTabBar, MoreDrawer } from "./AdminMobileNav";
@@ -125,6 +126,7 @@ const AdminDashboard = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [toFulfil, setToFulfil] = useState(0);
   const scrollRef = useRef<HTMLElement>(null);
+  useAppUpdates();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
