@@ -93,3 +93,33 @@ heavier items like jackets and jeans.
 If you'd rather pull live rates straight from Australia Post instead of a rate
 card, that needs an AusPost developer API key — the quote function is written
 so only its price lookup would need swapping.
+
+## NYE tickets (knotsss.com/nye)
+
+An unlisted page selling entry to the New Year's Eve party: nothing links to
+it, search engines are told not to list it, and its only link goes back to the
+countdown. $30 a ticket, 100 in total, up to 10 per order, sales close at
+midnight. Price, cap and dates live at the top of
+`supabase/functions/nye-tickets/index.ts` (and the wording on the page in
+`src/lib/nye.ts`).
+
+- Buyers pay inside the page with the same embedded Stripe form as the store —
+  card, Apple Pay or Google Pay, no address, no shipping.
+- Places are held while someone pays (30 minutes, or until they close the
+  form), so two people can never buy the last ticket.
+- Each ticket is an order (marked as a ticket), so buyers land in Contacts and
+  refunds work as usual, but tickets stay out of the store's order list and the
+  "to ship" badge. **Orders → NYE tickets** shows sales, the guest list (CSV
+  export) and a check-in button for the door.
+- The store's `stripe-webhook` ignores ticket payments; `nye-tickets` asks
+  Stripe directly and records them. If Resend is set up, the buyer also gets a
+  ticket email.
+
+**Switching it on:** deploy the `nye-tickets` function once. The dashboard
+walks you through it (Orders → NYE tickets → Copy code → paste into Supabase →
+Deploy), or with the CLI: `supabase functions deploy nye-tickets`. It uses the
+Stripe keys already set for the store.
+
+**The flyer:** put the image in `src/assets/nye/`, import it in
+`src/lib/nye.ts` and set it as `flyer`. Until then the page shows a black
+placeholder.

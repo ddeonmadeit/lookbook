@@ -82,6 +82,8 @@ import { useMediaQuery, PHONE } from "@/hooks/useMediaQuery";
 import { PHONE_SHEET, keepKeyboardClosed } from "./phoneSheet";
 import { BottomTabBar, MoreDrawer } from "./AdminMobileNav";
 import { ADMIN_TABS, type AdminTab, readStoredTab, storeTab } from "./adminTabs";
+import NyeTicketsPanel from "./NyeTicketsPanel";
+import { TICKET_ITEMS, isTicketOrder } from "@/lib/nye";
 
 interface OrderRow {
   id: string;
@@ -145,9 +147,14 @@ const AdminDashboard = () => {
     scrollRef.current?.scrollTo({ top: 0 });
   };
 
-  // Paid orders still waiting to ship: shown as a badge on Orders.
+  // Paid orders still waiting to ship: shown as a badge on Orders. (NYE
+  // tickets are paid orders too, but there's nothing to ship.)
   const loadBadges = useCallback(async () => {
-    const { count } = await supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "paid");
+    const { count } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "paid")
+      .not("items", "cs", TICKET_ITEMS);
     setToFulfil(count ?? 0);
   }, []);
   useEffect(() => {
@@ -227,7 +234,10 @@ const AdminDashboard = () => {
               <ProductsTab />
             </TabsContent>
             <TabsContent value="orders" key={`orders-${refreshKey}`}>
-              <OrdersTab onChanged={loadBadges} />
+              <div className="space-y-5">
+                <NyeTicketsPanel />
+                <OrdersTab onChanged={loadBadges} />
+              </div>
             </TabsContent>
             <TabsContent value="customers" key={`customers-${refreshKey}`}>
               <CustomersTab />
@@ -682,7 +692,8 @@ const OrdersTab = ({ onChanged }: { onChanged?: () => void }) => {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) toast.error("Failed to load orders", { description: error.message });
-    setOrders((data as unknown as OrderRow[]) || []);
+    // NYE tickets have their own panel above; nothing here to ship.
+    setOrders(((data as unknown as OrderRow[]) || []).filter((o) => !isTicketOrder(o)));
     setLoading(false);
   }, []);
 

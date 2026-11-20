@@ -25,6 +25,7 @@ const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const RequireAdmin = lazy(() => import("./pages/admin/RequireAdmin"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Nye = lazy(() => import("./pages/Nye"));
 
 // Matches the loading state the pages themselves show, so a route chunk
 // loading looks no different from a page loading its data.
@@ -72,9 +73,12 @@ const SiteGate = () => {
   const adminTheme = useAdminThemeStore((s) => s.theme);
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
+  // The unlisted NYE ticket page is open to anyone with the link, gate or no
+  // gate. Nothing links to it, and it links nowhere but back to the countdown.
+  const isNye = /^\/nye\/?$/.test(location.pathname);
   // Only worth checking while actually gated — once live, this never gates
   // anything, so skip the auth lookup entirely for ordinary shoppers.
-  const isGated = siteMode === "coming_soon" && !isAdminRoute;
+  const isGated = siteMode === "coming_soon" && !isAdminRoute && !isNye;
   const { hasSession, checked } = useAdminSession();
 
   // Dark mode is an admin-only preference. Applied here — a single stable
@@ -97,7 +101,7 @@ const SiteGate = () => {
   }
 
   return (
-    <Suspense fallback={<RouteFallback />}>
+    <Suspense fallback={isNye ? <div className="fixed inset-0 bg-black" /> : <RouteFallback />}>
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/about" element={<About />} />
@@ -105,6 +109,7 @@ const SiteGate = () => {
         <Route path="/product/:handle" element={<ProductDetail />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/checkout/success" element={<CheckoutSuccess />} />
+        <Route path="/nye" element={<Nye />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/admin"
