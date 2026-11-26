@@ -30,7 +30,6 @@ const EVENT = {
   id: "nye-2026",
   name: "KNOTS NYE Rooftop Party",
   currency: "aud",
-  maxPerOrder: 10,
   /** Shown on Stripe's form and in the email. */
   details: "175 Cathedral St, Woolloomooloo · 31 Dec 2026, 6pm–1am",
   /** Sales close at midnight on New Year's Eve, Sydney time. */
@@ -44,7 +43,7 @@ const TIERS = [
   { id: "final", name: "Final release", price: 30, capacity: 33 },
 ] as const;
 /** Lets the dashboard tell this version from older ones. */
-const VERSION = 5;
+const VERSION = 6;
 
 /** The owner's sold-out switches, published with the site. */
 const CONTROLS_URL = "https://knotsss.com/nye/controls.json";
@@ -57,6 +56,8 @@ const CONTROLS_TTL = 15_000;
  */
 const WALLET_DOMAINS = ["knotsss.com", "www.knotsss.com"];
 type TierId = (typeof TIERS)[number]["id"];
+/** Anyone can buy as many as they like, up to every ticket there is. */
+const MAX_PER_ORDER = TIERS.reduce((n, t) => n + t.capacity, 0);
 
 // A ticket is held for whoever is paying for it until their Checkout session
 // expires. 31 minutes is the shortest Stripe allows (30), plus slack for clocks.
@@ -244,7 +245,7 @@ function availability(orders: TicketOrder[], now: number, off: Set<string>) {
     price: (current ?? TIERS[TIERS.length - 1]).price,
     current: current?.id ?? null,
     sold_out: current === null,
-    max_per_order: EVENT.maxPerOrder,
+    max_per_order: MAX_PER_ORDER,
     tiers: TIERS.map((t, i) => ({
       id: t.id,
       name: t.name,
@@ -473,8 +474,8 @@ Deno.serve(async (req) => {
     if (body.action === "checkout") {
       if (now >= Date.parse(EVENT.salesEnd)) return json({ error: "Ticket sales have closed." }, 410);
       const quantity = Math.floor(Number(body.quantity));
-      if (!Number.isFinite(quantity) || quantity < 1 || quantity > EVENT.maxPerOrder) {
-        return json({ error: `Choose between 1 and ${EVENT.maxPerOrder} tickets.` }, 400);
+      if (!Number.isFinite(quantity) || quantity < 1 || quantity > MAX_PER_ORDER) {
+        return json({ error: `Choose between 1 and ${MAX_PER_ORDER} tickets.` }, 400);
       }
       // Only ever send the buyer back to our own site.
       const origin = req.headers.get("origin");

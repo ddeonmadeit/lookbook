@@ -23,8 +23,7 @@ import {
   tiersOf,
 } from "@/lib/nye";
 
-import flyerVideo from "@/assets/nye/flyer.mp4";
-import flyerFallback from "@/assets/nye/flyer-fallback.webp";
+import flyerLoop from "@/assets/nye/flyer.webp";
 import flyerPoster from "@/assets/nye/flyer-poster.jpg";
 
 /**
@@ -91,42 +90,20 @@ function Confetti() {
 const FLYER_ALT = `KNOTS ${NYE_EVENT.title} — ${NYE_EVENT.venue}, ${NYE_EVENT.time}`;
 
 /**
- * The flyer, looping like a GIF: a muted inline video with no controls, and
- * no way to tap into it. Where a phone won't autoplay video (iPhone Low Power
- * Mode, data savers) or can't play it, an animated image takes its place, so
- * there's never a play button.
+ * The flyer, looping forever: an animated image, exactly like a GIF. Unlike
+ * video it never needs autoplay permission, never stops when the phone is in
+ * Low Power Mode or the app goes to the background, and never shows a play
+ * button.
  */
 function FlyerLoop() {
-  const ref = useRef<HTMLVideoElement>(null);
-  const [asImage, setAsImage] = useState(false);
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-    video.defaultMuted = true;
-    video.muted = true;
-    video.setAttribute("muted", "");
-    video.setAttribute("disablepictureinpicture", "");
-    video.setAttribute("disableremoteplayback", "");
-    video.play()?.catch((err: DOMException) => {
-      if (err?.name !== "AbortError") setAsImage(true);
-    });
-  }, []);
-  if (asImage) return <img src={flyerFallback} alt={FLYER_ALT} className="nye-flyer-media" draggable={false} />;
   return (
-    <video
-      ref={ref}
+    <img
+      src={flyerLoop}
+      alt={FLYER_ALT}
       className="nye-flyer-media"
-      src={flyerVideo}
-      poster={flyerPoster}
-      autoPlay
-      muted
-      loop
-      playsInline
-      preload="auto"
-      controls={false}
-      tabIndex={-1}
-      aria-label={FLYER_ALT}
-      onError={() => setAsImage(true)}
+      draggable={false}
+      decoding="async"
+      fetchPriority="high"
     />
   );
 }
@@ -233,6 +210,8 @@ const Nye = () => {
   const [availability, setAvailability] = useState<Availability | null>(null);
   const [failed, setFailed] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  // What's typed in the quantity box while it's being edited (it may be empty mid-edit).
+  const [qtyText, setQtyText] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -442,7 +421,26 @@ const Nye = () => {
           >
             −
           </button>
-          <output aria-live="polite">{quantity}</output>
+          <input
+            className="nye-qty"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            aria-label="Number of tickets"
+            value={qtyText ?? String(quantity)}
+            onFocus={(e) => {
+              setQtyText(String(quantity));
+              e.currentTarget.select();
+            }}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 3);
+              setQtyText(digits);
+              const n = Number(digits);
+              if (n >= 1) setQuantity(Math.min(limit, n));
+            }}
+            onBlur={() => setQtyText(null)}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          />
           <button
             type="button"
             onClick={() => setQuantity((q) => Math.min(limit, q + 1))}
@@ -643,12 +641,6 @@ const STYLE = `
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
     pointer-events: none; background: transparent;
   }
-  /* Never any player chrome, even where autoplay is refused. */
-  .nye-flyer-media::-webkit-media-controls,
-  .nye-flyer-media::-webkit-media-controls-panel,
-  .nye-flyer-media::-webkit-media-controls-overlay-play-button,
-  .nye-flyer-media::-webkit-media-controls-start-playback-button,
-  .nye-flyer-media::-webkit-media-controls-enclosure { display: none !important; -webkit-appearance: none; opacity: 0; }
 
   /* Info */
   .nye-title {
@@ -703,7 +695,12 @@ const STYLE = `
     font-family: inherit; touch-action: manipulation;
   }
   .nye-stepper button:disabled { opacity: 0.3; cursor: default; }
-  .nye-stepper output { min-width: 18px; text-align: center; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--bone); }
+  .nye-qty {
+    width: 3.2ch; min-width: 26px; padding: 0; border: 0; background: transparent; text-align: center;
+    font-family: inherit; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--bone);
+    -moz-appearance: textfield; appearance: textfield; outline: none; caret-color: var(--bone);
+  }
+  .nye-qty:focus { border-bottom: 1px solid rgba(239,232,220,0.5); }
   .nye-cta {
     position: relative; overflow: hidden; flex: 1; height: 54px; border-radius: 999px; border: 0;
     background: rgb(var(--red)); color: var(--bone); cursor: pointer; touch-action: manipulation;

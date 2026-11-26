@@ -33,7 +33,7 @@ export const NYE_TIERS: Tier[] = [
 ];
 
 /** The version of the nye-tickets function this page is built for. */
-export const NYE_VERSION = 5;
+export const NYE_VERSION = 6;
 
 /** A release as the server reports it. Older versions sent counts instead of a status. */
 interface ServerTier {
@@ -129,8 +129,8 @@ export function dollars(amount: number) {
   return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
 }
 
-/** The most one order can ask for. Not capped by what's left: that would give the number away. */
-export const maxQuantity = (a: Pick<Availability, "max_per_order"> | null) => a?.max_per_order ?? 10;
+/** The most one order can ask for: every ticket there is. Not capped by what's left — that would give the number away. */
+export const maxQuantity = (a: Pick<Availability, "max_per_order"> | null) => a?.max_per_order ?? 100;
 
 export type SaleState = "loading" | "unavailable" | "on-sale" | "sold-out" | "closed";
 

@@ -106,7 +106,8 @@ before sells out. An order that crosses over is split (3 tickets with one $15
 left = 1 × $15 + 2 × $20), and the buyer sees the exact split before paying.
 The page never shows — or is even sent — how many tickets there are or how
 many are left: just each release's price and whether it's on sale, still to
-come, or sold out. Up to 10 per order; sales close at midnight. Releases,
+come, or sold out. Buyers can take as many as they like in one order (up to
+every ticket there is); sales close at midnight. Releases,
 prices and sizes live at the top of `supabase/functions/nye-tickets/index.ts`
 (the dashboard's copy of the sizes is in `NyeTicketsPanel.tsx`); the wording
 on the page in `src/lib/nye.ts`.
@@ -143,9 +144,10 @@ walks you through it (Orders → NYE tickets → Copy code → paste into Supaba
 Deploy), or with the CLI: `supabase functions deploy nye-tickets`. It uses the
 Stripe keys already set for the store.
 
-**The flyer** loops like a GIF: `src/assets/nye/flyer.mp4` (muted, no
-controls, can't be tapped), with `flyer-fallback.webp` — an animated image —
-taking over wherever a phone won't autoplay video (iPhone Low Power Mode), so
-there's never a play button. `flyer-poster.jpg` shows while it loads. To swap
-the flyer, replace those three files (810×1080 video, no audio) and
+**The flyer** is an animated image, `src/assets/nye/flyer.webp`, so it loops
+forever exactly like a GIF: no autoplay rules, never paused by Low Power Mode
+or switching apps, never a play button. `flyer-poster.jpg` shows while it
+loads. To swap the flyer, make a new animated WebP from the video (810×1080,
+24 fps, e.g. `ffmpeg -i flyer.mp4 -an -vf "fps=24,scale=810:1080" -c:v
+libwebp_anim -loop 0 -quality 82 flyer.webp`), replace those two files and
 `public/nye/og.png`, the link preview.

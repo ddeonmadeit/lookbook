@@ -27,7 +27,7 @@ const avail = (statuses: [Status, Status, Status] = ["on-sale", "next", "next"],
   current: "first",
   sold_out: false,
   currency: "AUD",
-  max_per_order: 10,
+  max_per_order: 100,
   tiers: NYE_TIERS.map((t, i) => ({ id: t.id, name: t.name, price: t.price, status: statuses[i] })),
   on_sale: true,
   ...over,
@@ -85,9 +85,9 @@ describe("selling tickets", () => {
     expect(saleState(null, false, before)).toBe("loading");
     expect(saleState(null, true, before)).toBe("unavailable");
   });
-  it("lets any order ask for up to the per-order limit, whatever's left", () => {
-    expect(maxQuantity(avail())).toBe(10);
-    expect(maxQuantity(null)).toBe(10);
+  it("lets anyone ask for as many as there are, whatever's left", () => {
+    expect(maxQuantity(avail())).toBe(100);
+    expect(maxQuantity(null)).toBe(100);
   });
   it("formats prices", () => {
     expect(dollars(15)).toBe("$15");
