@@ -482,6 +482,7 @@ const Nye = () => {
           </h1>
           <p className="nye-sub nye-rise" style={{ "--i": 2 } as CSSProperties}>
             <span>{NYE_EVENT.venue}</span>
+            <span className="nye-highlights">{NYE_EVENT.highlights}</span>
             <span>
               {NYE_EVENT.dateLong} · {NYE_EVENT.time}
             </span>
@@ -648,7 +649,7 @@ const STYLE = `
     font-size: clamp(42px, 12.5vw, 88px); line-height: 0.9; letter-spacing: -0.025em;
   }
   .nye-sub { margin: 14px 0 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--taupe); }
-  .nye-sub span:first-child { color: var(--bone); }
+  .nye-sub span:first-child, .nye-sub .nye-highlights { color: var(--bone); }
 
   .nye-countdown { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 22px; max-width: 460px; }
   .nye-countdown-cell {
