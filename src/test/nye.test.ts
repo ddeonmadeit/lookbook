@@ -1,21 +1,33 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type Availability,
+  type Tier,
   NYE_MIDNIGHT,
-  availabilityLine,
+  NYE_TIERS,
   countdownParts,
   dollars,
   isTicketOrder,
   maxQuantity,
+  quote,
+  quoteBreakdown,
   saleState,
   saveTicket,
   savedTickets,
   ticketCount,
   ticketRef,
+  tierLine,
+  tierState,
 } from "@/lib/nye";
 
+const tiers = (first: number, second = 50): Tier[] => [
+  { ...NYE_TIERS[0], remaining: first, sold: 50 - first },
+  { ...NYE_TIERS[1], remaining: second, sold: 50 - second },
+];
+
 const avail = (over: Partial<Availability> = {}): Availability => ({
-  price: 30,
+  price: 20,
+  current: "first",
+  tiers: tiers(50),
   currency: "AUD",
   capacity: 100,
   max_per_order: 10,
@@ -53,12 +65,32 @@ describe("selling tickets", () => {
     expect(maxQuantity(avail({ remaining: 3 }))).toBe(3);
     expect(maxQuantity(avail({ remaining: 0 }))).toBe(0);
   });
-  it("shows the cap until stock is low, then how many are left", () => {
-    expect(availabilityLine(null)).toBe("Strictly 100 tickets");
-    expect(availabilityLine(avail({ remaining: 60 }))).toBe("Strictly 100 tickets");
-    expect(availabilityLine(avail({ remaining: 7 }))).toBe("Only 7 left");
-    expect(availabilityLine(avail({ remaining: 0 }))).toBe("Sold out");
-    expect(availabilityLine(avail({ remaining: 0, held: 2 }))).toMatch(/may free up/);
+  it("starts with 50 at $20 then 50 at $30", () => {
+    expect(NYE_TIERS.map((t) => [t.name, t.price, t.capacity])).toEqual([
+      ["First release", 20, 50],
+      ["Second release", 30, 50],
+    ]);
+  });
+  it("prices an order from the earliest release with places, like the server", () => {
+    expect(quote(2, tiers(50))).toEqual({ lines: [{ tier: "first", name: "First release", price: 20, quantity: 2 }], total: 40 });
+    const split = quote(3, tiers(1));
+    expect(split?.total).toBe(80);
+    expect(quoteBreakdown(split!.lines)).toBe("1 × $20 + 2 × $30");
+    expect(quote(2, tiers(0))?.total).toBe(60);
+    expect(quote(3, tiers(0, 2))).toBeNull();
+  });
+  it("labels each release: on sale, next up, or sold out", () => {
+    const t = tiers(7);
+    expect(tierState(t[0], { current: "first" }, t)).toBe("on-sale");
+    expect(tierState(t[1], { current: "first" }, t)).toBe("next");
+    expect(tierLine(t[0], "on-sale")).toBe("Only 7 left");
+    expect(tierLine(tiers(40)[0], "on-sale")).toBe("On sale now");
+    expect(tierLine(t[1], "next", t[0])).toBe("Opens when first release sells out");
+    const gone = tiers(0);
+    expect(tierState(gone[0], { current: "second" }, gone)).toBe("sold-out");
+    expect(tierLine(gone[0], "sold-out")).toBe("Sold out");
+    expect(tierLine({ ...gone[0], held: 2 }, "sold-out")).toMatch(/may free up/);
+    expect(tierState(gone[1], null, gone)).toBe("on-sale");
   });
   it("formats prices", () => {
     expect(dollars(30)).toBe("$30");

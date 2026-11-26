@@ -4,16 +4,18 @@
 // Self-contained (no ../_shared imports) so it can be pasted straight into the
 // Supabase dashboard's function editor as well as deployed with the CLI.
 //
-// Tickets are stored as orders (items[0].kind = "ticket"), so buyers land in
-// Contacts and refunds work like any order — but they never touch stock or
-// shipping. The store's stripe-webhook ignores them: their Checkout sessions
-// carry `ticket_order_id` rather than `order_id`. A ticket is marked paid here
-// instead, after asking Stripe, either when the buyer's page confirms it or —
-// for someone who paid and closed the tab straight away — the next time
-// anyone loads the page after their hold runs out.
+// Tickets are stored as orders (each item has kind "ticket" and its release),
+// so buyers land in Contacts and refunds work like any order — but they never
+// touch stock or shipping. The store's stripe-webhook ignores them: their
+// Checkout sessions carry `ticket_order_id` rather than `order_id`. A ticket is
+// marked paid here instead, after asking Stripe, either when the buyer's page
+// confirms it or — for someone who paid and closed the tab straight away — the
+// next time anyone loads the page after their hold runs out.
 //
-// The browser only ever sends a quantity. The price, the cap and every count
-// are decided here.
+// Releases sell in order: the second opens once the first is gone. An order
+// that crosses over is split between them, so every release sells exactly its
+// own number. The browser only ever sends a quantity; prices, caps and every
+// count are decided here.
 
 import Stripe from "npm:stripe@17";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -21,16 +23,21 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 const EVENT = {
   id: "nye-2026",
   name: "KNOTS New Year's Eve",
-  ticket: "KNOTS NYE — Entry",
-  /** AUD per ticket. */
-  price: 30,
   currency: "aud",
-  /** Total tickets, ever. */
-  capacity: 100,
   maxPerOrder: 10,
+  /** Shown on Stripe's form and in the email. */
+  details: "Rooftop party · 175 Cathedral St, Woolloomooloo · 31 Dec 2026, 6pm–1am",
   /** Sales close at midnight on New Year's Eve, Sydney time. */
   salesEnd: "2027-01-01T00:00:00+11:00",
 };
+
+/** In the order they sell. Prices in AUD. */
+const TIERS = [
+  { id: "first", name: "First release", price: 20, capacity: 50 },
+  { id: "second", name: "Second release", price: 30, capacity: 50 },
+] as const;
+type TierId = (typeof TIERS)[number]["id"];
+const CAPACITY = TIERS.reduce((n, t) => n + t.capacity, 0);
 
 // A ticket is held for whoever is paying for it until their Checkout session
 // expires. 31 minutes is the shortest Stripe allows (30), plus slack for clocks.
@@ -54,18 +61,47 @@ function ticketRef(id: string) {
   return `KN-${id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
 }
 
+interface TicketItem {
+  tier?: string;
+  quantity?: number;
+}
+
 interface TicketOrder {
   id: string;
-  items: Array<{ quantity?: number }>;
+  items: TicketItem[];
   status: string;
   created_at: string;
   payment_id: string | null;
+}
+
+type Usage = Record<TierId, number>;
+const emptyUsage = (): Usage => Object.fromEntries(TIERS.map((t) => [t.id, 0])) as Usage;
+const tierOf = (it: TicketItem): TierId =>
+  (TIERS.find((t) => t.id === it.tier)?.id ?? TIERS[TIERS.length - 1].id) as TierId;
+
+/** Tickets per release across some orders. */
+function usage(orders: TicketOrder[]): Usage {
+  const used = emptyUsage();
+  for (const o of orders) for (const it of o.items) used[tierOf(it)] += Number(it.quantity) || 0;
+  return used;
 }
 
 const qtyOf = (o: TicketOrder) => o.items.reduce((n, it) => n + (Number(it.quantity) || 0), 0);
 const isSold = (o: TicketOrder) => o.status === "paid" || o.status === "fulfilled";
 const isFreshHold = (o: TicketOrder, now: number) =>
   o.status === "pending" && now - Date.parse(o.created_at) < HOLD_MS;
+
+/** Fills an order from the earliest release with places left. Null if it doesn't fit. */
+function allocate(quantity: number, used: Usage) {
+  const lines: Array<{ tier: (typeof TIERS)[number]; quantity: number }> = [];
+  let left = quantity;
+  for (const tier of TIERS) {
+    const take = Math.min(left, Math.max(0, tier.capacity - used[tier.id]));
+    if (take > 0) lines.push({ tier, quantity: take });
+    left -= take;
+  }
+  return left > 0 ? null : lines;
+}
 
 async function ticketOrders(db: SupabaseClient): Promise<TicketOrder[]> {
   const { data, error } = await db
@@ -78,7 +114,15 @@ async function ticketOrders(db: SupabaseClient): Promise<TicketOrder[]> {
   return (data ?? []) as TicketOrder[];
 }
 
-/** Records a completed payment against its order. True only for the call that did it. */
+interface PaidOrder {
+  id: string;
+  items: Array<TicketItem & { title?: string }>;
+  customer_name: string;
+  customer_email: string;
+  total: number;
+}
+
+/** Records a completed payment against its order. Returns the order only for the call that did it. */
 async function markPaid(db: SupabaseClient, orderId: string, session: Stripe.Checkout.Session) {
   const { data } = await db
     .from("orders")
@@ -96,7 +140,7 @@ async function markPaid(db: SupabaseClient, orderId: string, session: Stripe.Che
     .in("status", ["pending", "cancelled"])
     .select("id,items,customer_name,customer_email,total")
     .maybeSingle();
-  return data as { id: string; items: TicketOrder["items"]; customer_name: string; customer_email: string; total: number } | null;
+  return data as PaidOrder | null;
 }
 
 /**
@@ -129,19 +173,32 @@ async function settleStaleHolds(db: SupabaseClient, stripe: Stripe, orders: Tick
 }
 
 function availability(orders: TicketOrder[], now: number) {
-  const sold = orders.filter(isSold).reduce((n, o) => n + qtyOf(o), 0);
+  const sold = usage(orders.filter(isSold));
   // An unsettled hold still counts: better a place waits than gets sold twice.
-  const held = orders.filter((o) => o.status === "pending").reduce((n, o) => n + qtyOf(o), 0);
-  const remaining = Math.max(0, EVENT.capacity - sold - held);
+  const held = usage(orders.filter((o) => o.status === "pending"));
+  const tiers = TIERS.map((t) => ({
+    id: t.id,
+    name: t.name,
+    price: t.price,
+    capacity: t.capacity,
+    sold: sold[t.id],
+    held: held[t.id],
+    remaining: Math.max(0, t.capacity - sold[t.id] - held[t.id]),
+  }));
+  const current = tiers.find((t) => t.remaining > 0) ?? null;
+  const total = (k: "sold" | "held" | "remaining") => tiers.reduce((n, t) => n + t[k], 0);
   return {
     name: EVENT.name,
-    price: EVENT.price,
     currency: EVENT.currency.toUpperCase(),
-    capacity: EVENT.capacity,
+    /** The price of the next ticket. */
+    price: (current ?? tiers[tiers.length - 1]).price,
+    current: current?.id ?? null,
+    capacity: CAPACITY,
     max_per_order: EVENT.maxPerOrder,
-    sold,
-    held,
-    remaining,
+    sold: total("sold"),
+    held: total("held"),
+    remaining: total("remaining"),
+    tiers,
     on_sale: now < Date.parse(EVENT.salesEnd),
   };
 }
@@ -150,11 +207,18 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** "2 × First release, 1 × Second release" */
+function tierSummary(items: TicketItem[]) {
+  return TIERS.map((t) => {
+    const n = items.filter((it) => tierOf(it) === t.id).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+    return n ? `${n} × ${t.name}` : "";
+  })
+    .filter(Boolean)
+    .join(", ");
+}
+
 /** The ticket, by email. Optional: without Resend set up, the page is the ticket. */
-async function sendTicketEmail(
-  db: SupabaseClient,
-  order: { id: string; items: TicketOrder["items"]; customer_name: string; customer_email: string; total: number },
-) {
+async function sendTicketEmail(db: SupabaseClient, order: PaidOrder) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   const to = (order.customer_email ?? "").trim();
   if (!apiKey || !to.includes("@")) return;
@@ -164,24 +228,28 @@ async function sendTicketEmail(
   const ref = ticketRef(order.id);
   const first = (order.customer_name ?? "").trim().split(/\s+/)[0] || "there";
   const plural = qty === 1 ? "ticket" : "tickets";
+  const releases = tierSummary(order.items);
   const cell = "font-family:Helvetica,Arial,sans-serif;";
+  const label = `${cell}font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#8a8a8a;`;
+  const value = `${cell}font-size:16px;color:#fff;`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>Your NYE ${plural}</title></head>
 <body style="margin:0;padding:0;background:#000;">
 <div style="display:none;max-height:0;overflow:hidden;">You're in. ${qty} ${plural} for KNOTS NYE, ref ${ref}.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#000;padding:40px 16px;"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;border:1px solid #2a2a2a;">
 <tr><td style="${cell}padding:28px 28px 8px;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:#8a8a8a;">KNOTS presents</td></tr>
-<tr><td style="${cell}padding:0 28px 22px;font-size:34px;line-height:1.05;font-weight:bold;letter-spacing:0.02em;text-transform:uppercase;color:#fff;">New Year's Eve</td></tr>
+<tr><td style="${cell}padding:0 28px 6px;font-size:34px;line-height:1.05;font-weight:bold;letter-spacing:0.02em;text-transform:uppercase;color:#fff;">New Year's Eve</td></tr>
+<tr><td style="${cell}padding:0 28px 22px;font-size:12px;line-height:1.6;color:#8a8a8a;">${escapeHtml(EVENT.details)}</td></tr>
 <tr><td style="${cell}padding:0 28px 26px;font-size:14px;line-height:1.7;color:#cfcfcf;">You're in, ${escapeHtml(first)}. Show this email or give your name at the door.</td></tr>
 <tr><td style="padding:0 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px dashed #444;border-bottom:1px dashed #444;">
-<tr><td style="${cell}padding:16px 0 4px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#8a8a8a;">Name</td><td align="right" style="${cell}padding:16px 0 4px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#8a8a8a;">Admits</td></tr>
-<tr><td style="${cell}padding:0 0 14px;font-size:16px;color:#fff;">${escapeHtml(order.customer_name || "Ticket holder")}</td><td align="right" style="${cell}padding:0 0 14px;font-size:16px;color:#fff;">${qty}</td></tr>
-<tr><td style="${cell}padding:0 0 4px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#8a8a8a;">Date</td><td align="right" style="${cell}padding:0 0 4px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#8a8a8a;">Ref</td></tr>
-<tr><td style="${cell}padding:0 0 16px;font-size:16px;color:#fff;">31.12.2026</td><td align="right" style="${cell}padding:0 0 16px;font-size:16px;color:#fff;font-family:Menlo,Consolas,monospace;">${ref}</td></tr>
+<tr><td style="${label}padding:16px 0 4px;">Name</td><td align="right" style="${label}padding:16px 0 4px;">Admits</td></tr>
+<tr><td style="${value}padding:0 0 14px;">${escapeHtml(order.customer_name || "Ticket holder")}</td><td align="right" style="${value}padding:0 0 14px;">${qty}</td></tr>
+<tr><td style="${label}padding:0 0 4px;">Date</td><td align="right" style="${label}padding:0 0 4px;">Ref</td></tr>
+<tr><td style="${value}padding:0 0 16px;">31.12.2026</td><td align="right" style="${value}padding:0 0 16px;font-family:Menlo,Consolas,monospace;">${ref}</td></tr>
 </table></td></tr>
-<tr><td style="${cell}padding:18px 28px 28px;font-size:12px;line-height:1.7;color:#8a8a8a;">Paid AUD ${(Number(order.total) || 0).toFixed(2)}. Your ticket is also at <a href="https://knotsss.com/nye" style="color:#fff;">knotsss.com/nye</a> on the device you bought it on.</td></tr>
+<tr><td style="${cell}padding:18px 28px 28px;font-size:12px;line-height:1.7;color:#8a8a8a;">${escapeHtml(releases)} · paid AUD ${(Number(order.total) || 0).toFixed(2)}. Your ticket is also at <a href="https://knotsss.com/nye" style="color:#fff;">knotsss.com/nye</a> on the device you bought it on.</td></tr>
 </table></td></tr></table></body></html>`;
-  const text = `You're in, ${first}.\n\nKNOTS New Year's Eve, 31.12.2026\nName: ${order.customer_name}\nAdmits: ${qty}\nRef: ${ref}\nPaid: AUD ${(Number(order.total) || 0).toFixed(2)}\n\nShow this email or give your name at the door.`;
+  const text = `You're in, ${first}.\n\nKNOTS New Year's Eve\n${EVENT.details}\n\nName: ${order.customer_name}\nAdmits: ${qty} (${releases})\nRef: ${ref}\nPaid: AUD ${(Number(order.total) || 0).toFixed(2)}\n\nShow this email or give your name at the door.`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -205,6 +273,66 @@ async function sendTicketEmail(
   } catch (err) {
     console.error("ticket email failed:", err);
   }
+}
+
+/**
+ * Holds `quantity` places and returns the hold, or why it couldn't. The hold
+ * is written first and checked after, against everything sold or held before
+ * it — so two people can never both get the last place in a release. Losing
+ * that race just means trying again against the new numbers.
+ */
+async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: number) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = await ticketOrders(db);
+    await settleStaleHolds(db, stripe, before, now);
+    const live = before.filter((o) => o.status !== "cancelled");
+    const lines = allocate(quantity, usage(live));
+    if (!lines) {
+      const left = Math.max(0, CAPACITY - live.reduce((n, o) => n + qtyOf(o), 0));
+      return { error: left === 0 ? "Sold out." : `Only ${left} ticket${left === 1 ? "" : "s"} left.`, remaining: left } as const;
+    }
+
+    const total = lines.reduce((n, l) => n + l.tier.price * l.quantity, 0);
+    const { data: order, error } = await db
+      .from("orders")
+      .insert({
+        items: lines.map((l) => ({
+          kind: "ticket",
+          event: EVENT.id,
+          tier: l.tier.id,
+          title: `KNOTS NYE — ${l.tier.name}`,
+          variantTitle: "",
+          price: String(l.tier.price),
+          quantity: l.quantity,
+        })),
+        subtotal: total,
+        shipping_cost: 0,
+        total,
+        currency: EVENT.currency.toUpperCase(),
+        customer_name: "(pending payment)",
+        customer_email: "(pending payment)",
+        notes: "NYE ticket",
+        status: "pending",
+        payment_provider: "stripe",
+      })
+      .select("id,created_at")
+      .single();
+    if (error) throw error;
+
+    const mine = { at: Date.parse(order.created_at), id: order.id as string };
+    const ahead = (await ticketOrders(db)).filter((o) => {
+      if (o.id === mine.id) return false;
+      if (isSold(o)) return true;
+      const at = Date.parse(o.created_at);
+      return o.status === "pending" && (at < mine.at || (at === mine.at && o.id < mine.id));
+    });
+    const used = usage(ahead);
+    if (lines.every((l) => used[l.tier.id] + l.quantity <= l.tier.capacity)) {
+      return { order: order as { id: string }, lines, total } as const;
+    }
+    await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
+  }
+  return { error: "Tickets are going fast — please try again.", remaining: null } as const;
 }
 
 Deno.serve(async (req) => {
@@ -246,58 +374,9 @@ Deno.serve(async (req) => {
         return json({ error: "Invalid return URL." }, 400);
       }
 
-      // Hold the places first, then check the hold fits. Every request sees
-      // every hold made before it, so two people can't both take the last one.
-      const total = EVENT.price * quantity;
-      const { data: order, error: insertErr } = await db
-        .from("orders")
-        .insert({
-          items: [
-            {
-              kind: "ticket",
-              event: EVENT.id,
-              title: EVENT.ticket,
-              variantTitle: "",
-              price: String(EVENT.price),
-              quantity,
-            },
-          ],
-          subtotal: total,
-          shipping_cost: 0,
-          total,
-          currency: EVENT.currency.toUpperCase(),
-          customer_name: "(pending payment)",
-          customer_email: "(pending payment)",
-          notes: "NYE ticket",
-          status: "pending",
-          payment_provider: "stripe",
-        })
-        .select("id,created_at")
-        .single();
-      if (insertErr) throw insertErr;
-
-      const orders = await ticketOrders(db);
-      await settleStaleHolds(db, stripe, orders, now);
-      const mine = { at: Date.parse(order.created_at), id: order.id as string };
-      const ahead = orders
-        .filter((o) => o.id !== mine.id && o.status !== "cancelled")
-        .filter((o) => {
-          if (isSold(o)) return true;
-          const at = Date.parse(o.created_at);
-          return o.status === "pending" && (at < mine.at || (at === mine.at && o.id < mine.id));
-        })
-        .reduce((n, o) => n + qtyOf(o), 0);
-      if (ahead + quantity > EVENT.capacity) {
-        await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
-        const left = Math.max(0, EVENT.capacity - ahead);
-        return json(
-          {
-            error: left === 0 ? "Sold out." : `Only ${left} ticket${left === 1 ? "" : "s"} left.`,
-            remaining: left,
-          },
-          409,
-        );
-      }
+      const held = await hold(db, stripe, quantity, now);
+      if ("error" in held) return json({ error: held.error, remaining: held.remaining }, 409);
+      const { order, lines, total } = held;
 
       const metadata = { ticket_order_id: order.id, event: EVENT.id, kind: "ticket" };
       let session: Stripe.Checkout.Session;
@@ -307,20 +386,18 @@ Deno.serve(async (req) => {
           ui_mode: "embedded",
           redirect_on_completion: "if_required",
           return_url: `${body.return_url}?session_id={CHECKOUT_SESSION_ID}`,
-          line_items: [
-            {
-              quantity,
-              price_data: {
-                currency: EVENT.currency,
-                unit_amount: Math.round(EVENT.price * 100),
-                product_data: { name: EVENT.ticket, description: "31 December 2026 · Sydney" },
-              },
+          line_items: lines.map((l) => ({
+            quantity: l.quantity,
+            price_data: {
+              currency: EVENT.currency,
+              unit_amount: Math.round(l.tier.price * 100),
+              product_data: { name: `KNOTS NYE — ${l.tier.name}`, description: EVENT.details },
             },
-          ],
+          })),
           submit_type: "pay",
           expires_at: Math.floor(now / 1000) + SESSION_MINUTES * 60,
           metadata,
-          payment_intent_data: { metadata, description: `${EVENT.ticket} × ${quantity}` },
+          payment_intent_data: { metadata, description: `KNOTS NYE × ${quantity}` },
         });
       } catch (err) {
         await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
@@ -332,6 +409,8 @@ Deno.serve(async (req) => {
         client_secret: session.client_secret,
         publishable_key: publishableKey,
         session_id: session.id,
+        lines: lines.map((l) => ({ tier: l.tier.id, name: l.tier.name, price: l.tier.price, quantity: l.quantity })),
+        total,
       });
     }
 
@@ -343,23 +422,23 @@ Deno.serve(async (req) => {
       if (!orderId || session.metadata?.event !== EVENT.id) return json({ error: "Not a ticket." }, 404);
 
       const paid = session.status === "complete" && session.payment_status !== "unpaid";
-      if (paid) {
-        const flipped = await markPaid(db, orderId, session);
-        if (flipped) await sendTicketEmail(db, flipped);
-      }
-      const quantity = (session.amount_subtotal ?? 0) / 100 / EVENT.price;
+      if (!paid) return json({ status: session.status, ticket: null });
+
+      const flipped = await markPaid(db, orderId, session);
+      if (flipped) await sendTicketEmail(db, flipped);
+      const { data: row } = await db.from("orders").select("items").eq("id", orderId).maybeSingle();
+      const items = ((row?.items ?? []) as TicketItem[]);
       return json({
-        status: paid ? "paid" : session.status,
-        ticket: paid
-          ? {
-              ref: ticketRef(orderId),
-              name: session.customer_details?.name ?? null,
-              email: session.customer_details?.email ?? null,
-              quantity: Math.round(quantity),
-              total: (session.amount_total ?? 0) / 100,
-              currency: (session.currency ?? EVENT.currency).toUpperCase(),
-            }
-          : null,
+        status: "paid",
+        ticket: {
+          ref: ticketRef(orderId),
+          name: session.customer_details?.name ?? null,
+          email: session.customer_details?.email ?? null,
+          quantity: items.reduce((n, it) => n + (Number(it.quantity) || 0), 0),
+          releases: tierSummary(items),
+          total: (session.amount_total ?? 0) / 100,
+          currency: (session.currency ?? EVENT.currency).toUpperCase(),
+        },
       });
     }
 

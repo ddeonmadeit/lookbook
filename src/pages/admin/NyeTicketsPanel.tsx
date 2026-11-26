@@ -4,14 +4,14 @@ import { Input } from "@/components/ui/input";
 import { Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { type Availability, NYE_EVENT, TICKET_ITEMS, ticketCount, ticketRef } from "@/lib/nye";
+import { type Availability, NYE_EVENT, NYE_TIERS, TICKET_ITEMS, ticketCount, ticketRef } from "@/lib/nye";
 
 const projectRef = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split(".")[0];
 const LINK = "https://knotsss.com/nye";
 
 interface TicketOrder {
   id: string;
-  items: Array<{ quantity?: number }>;
+  items: Array<{ quantity?: number; tier?: string }>;
   status: string;
   customer_name: string;
   customer_email: string;
@@ -148,6 +148,21 @@ const NyeTicketsPanel = () => {
   const inside = valid.filter((o) => o.status === "fulfilled").reduce((n, o) => n + ticketCount(o), 0);
   const revenue = valid.reduce((n, o) => n + (Number(o.total) || 0), 0);
   const capacity = live?.capacity ?? NYE_EVENT.capacity;
+  // Sold per release, from the orders themselves (refunds don't count).
+  const releases = (live?.tiers ?? NYE_TIERS).map((t) => ({
+    ...t,
+    taken: valid.reduce(
+      (n, o) => n + o.items.filter((it) => (it.tier ?? NYE_TIERS[NYE_TIERS.length - 1].id) === t.id).reduce((m, it) => m + (Number(it.quantity) || 0), 0),
+      0,
+    ),
+  }));
+  const releasesOf = (o: TicketOrder) =>
+    NYE_TIERS.map((t) => {
+      const n = o.items.filter((it) => (it.tier ?? NYE_TIERS[NYE_TIERS.length - 1].id) === t.id).reduce((m, it) => m + (Number(it.quantity) || 0), 0);
+      return n ? `${n} × ${t.name}` : "";
+    })
+      .filter(Boolean)
+      .join(", ");
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -173,11 +188,11 @@ const NyeTicketsPanel = () => {
   const exportCsv = () => {
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = shown.map((o) =>
-      [o.customer_name, o.customer_email, o.customer_phone, ticketCount(o), ticketRef(o.id), o.status, Number(o.total).toFixed(2)]
+      [o.customer_name, o.customer_email, o.customer_phone, ticketCount(o), releasesOf(o), ticketRef(o.id), o.status, Number(o.total).toFixed(2)]
         .map(esc)
         .join(","),
     );
-    const blob = new Blob([["name,email,phone,tickets,ref,status,paid", ...rows].join("\n")], { type: "text/csv" });
+    const blob = new Blob([["name,email,phone,tickets,releases,ref,status,paid", ...rows].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -237,8 +252,23 @@ const NyeTicketsPanel = () => {
           <p className="font-body text-[15px] mt-0.5">{inside}</p>
         </div>
       </div>
-      <div className="h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden>
-        <div className="h-full bg-foreground transition-all" style={{ width: `${Math.min(100, (sold / capacity) * 100)}%` }} />
+      <div className="space-y-2">
+        {releases.map((t) => (
+          <div key={t.id}>
+            <div className="flex justify-between font-body text-[11px]">
+              <span>
+                {t.name} · ${t.price}
+              </span>
+              <span className="text-muted-foreground">
+                {t.taken} / {t.capacity}
+                {t.taken >= t.capacity ? " · sold out" : live?.current === t.id ? " · on sale" : ""}
+              </span>
+            </div>
+            <div className="h-1.5 mt-1 rounded-full bg-muted overflow-hidden" aria-hidden>
+              <div className="h-full bg-foreground transition-all" style={{ width: `${Math.min(100, (t.taken / t.capacity) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
       </div>
       {live && live.held > 0 && (
         <p className="font-body text-[11px] text-muted-foreground">{live.held} held by people paying right now.</p>
@@ -293,7 +323,7 @@ const NyeTicketsPanel = () => {
                         {o.customer_name} <span className="text-muted-foreground">× {ticketCount(o)}</span>
                       </p>
                       <p className="font-body text-[11px] text-muted-foreground truncate">
-                        <span className="font-mono">{ticketRef(o.id)}</span> · {o.customer_email}
+                        <span className="font-mono">{ticketRef(o.id)}</span> · {releasesOf(o)} · {o.customer_email}
                         {refunded ? " · refunded" : ""}
                       </p>
                     </div>
