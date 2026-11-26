@@ -96,12 +96,17 @@ so only its price lookup would need swapping.
 
 ## NYE tickets (knotsss.com/nye)
 
-An unlisted page selling entry to the New Year's Eve party: nothing links to
-it, search engines are told not to list it, and its only link goes back to the
-countdown. $30 a ticket, 100 in total, up to 10 per order, sales close at
-midnight. Price, cap and dates live at the top of
-`supabase/functions/nye-tickets/index.ts` (and the wording on the page in
-`src/lib/nye.ts`).
+An unlisted page selling entry to the New Year's Eve rooftop party (175
+Cathedral St, Woolloomooloo, 6pm–1am): nothing links to it, search engines are
+told not to list it, and its only link goes back to the countdown.
+
+Two releases, sold in order: **first release $20 (50 tickets)**, then
+**second release $30 (50 tickets)**, which opens once the first is gone. An
+order that crosses over is split (3 tickets with 1 first-release left = 1 ×
+$20 + 2 × $30), so each release sells exactly 50. Up to 10 per order; sales
+close at midnight. Releases, prices and dates live at the top of
+`supabase/functions/nye-tickets/index.ts`; the wording on the page, and the
+releases shown before the server answers, in `src/lib/nye.ts`.
 
 - Buyers pay inside the page with the same embedded Stripe form as the store —
   card, Apple Pay or Google Pay, no address, no shipping.
@@ -120,6 +125,9 @@ walks you through it (Orders → NYE tickets → Copy code → paste into Supaba
 Deploy), or with the CLI: `supabase functions deploy nye-tickets`. It uses the
 Stripe keys already set for the store.
 
-**The flyer:** put the image in `src/assets/nye/`, import it in
-`src/lib/nye.ts` and set it as `flyer`. Until then the page shows a black
-placeholder.
+**The flyer** loops like a GIF: `src/assets/nye/flyer.mp4` (muted, no
+controls, can't be tapped), with `flyer-fallback.webp` — an animated image —
+taking over wherever a phone won't autoplay video (iPhone Low Power Mode), so
+there's never a play button. `flyer-poster.jpg` shows while it loads. To swap
+the flyer, replace those three files (810×1080 video, no audio) and
+`public/nye/og.png`, the link preview.

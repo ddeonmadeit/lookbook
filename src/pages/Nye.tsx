@@ -7,22 +7,26 @@ import KnotsMark from "@/components/KnotsMark";
 import {
   type Availability,
   type NyeTicket,
-  LOW_STOCK,
+  type QuoteLine,
   NYE_EVENT,
   NYE_MIDNIGHT,
-  availabilityLine,
+  NYE_TIERS,
   countdownParts,
   dollars,
   maxQuantity,
   pad2,
+  quote,
+  quoteBreakdown,
   saleState,
   saveTicket,
   savedTickets,
+  tierLine,
+  tierState,
 } from "@/lib/nye";
 
-import wcManoNegraFont from "@/assets/coming-soon/fonts/WCManoNegraBta.otf";
-import alteHaasBoldFont from "@/assets/coming-soon/fonts/AlteHaasGroteskBold.ttf";
-import alteHaasRegularFont from "@/assets/coming-soon/fonts/AlteHaasGroteskRegular.ttf";
+import flyerVideo from "@/assets/nye/flyer.mp4";
+import flyerFallback from "@/assets/nye/flyer-fallback.webp";
+import flyerPoster from "@/assets/nye/flyer-poster.jpg";
 
 /**
  * supabase.functions.invoke() reports any non-2xx as a generic error and
@@ -102,7 +106,7 @@ function Embers() {
         if (e.y < -10) Object.assign(e, spawn(false));
         const flicker = 0.55 + 0.45 * Math.sin(t / 380 + e.phase);
         ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 214, 160, ${(e.a * flicker).toFixed(3)})`;
+        ctx.fillStyle = `rgba(255, 150, 100, ${(e.a * flicker).toFixed(3)})`;
         ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
         ctx.fill();
       }
@@ -127,7 +131,7 @@ function Confetti() {
         "--r": `${(Math.random() - 0.5) * 1080}deg`,
         "--d": `${1.4 + Math.random() * 1.2}s`,
         "--delay": `${Math.random() * 0.15}s`,
-        "--c": ["#fff", "#ffd9a0", "#f3c26b", "#bdbdbd"][i % 4],
+        "--c": ["#fff", "#ff7a45", "#e8321e", "#ffc9a8"][i % 4],
       })) as CSSProperties[],
     [],
   );
@@ -138,6 +142,49 @@ function Confetti() {
         <span key={i} style={style} />
       ))}
     </div>
+  );
+}
+
+const FLYER_ALT = `KNOTS ${NYE_EVENT.title} — ${NYE_EVENT.kind}, ${NYE_EVENT.venue}, ${NYE_EVENT.time}`;
+
+/**
+ * The flyer, looping like a GIF: a muted inline video with no controls, and
+ * no way to tap into it. Where a phone won't autoplay video (iPhone Low Power
+ * Mode, data savers) or can't play it, an animated image takes its place, so
+ * there's never a play button.
+ */
+function FlyerLoop() {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [asImage, setAsImage] = useState(false);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    video.defaultMuted = true;
+    video.muted = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("disablepictureinpicture", "");
+    video.setAttribute("disableremoteplayback", "");
+    video.play()?.catch((err: DOMException) => {
+      if (err?.name !== "AbortError") setAsImage(true);
+    });
+  }, []);
+  if (asImage) return <img src={flyerFallback} alt={FLYER_ALT} className="nye-flyer-media" draggable={false} />;
+  return (
+    <video
+      ref={ref}
+      className="nye-flyer-media"
+      src={flyerVideo}
+      poster={flyerPoster}
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="auto"
+      controls={false}
+      tabIndex={-1}
+      aria-label={FLYER_ALT}
+      onError={() => setAsImage(true)}
+    />
   );
 }
 
@@ -163,26 +210,7 @@ function Flyer() {
   return (
     <div className="nye-flyer-stage">
       <div ref={ref} className="nye-flyer" onPointerMove={tilt} onPointerLeave={reset}>
-        {NYE_EVENT.flyer ? (
-          <img src={NYE_EVENT.flyer} alt={`KNOTS ${NYE_EVENT.title} flyer`} className="nye-flyer-img" />
-        ) : (
-          <div className="nye-flyer-placeholder" aria-label="Flyer coming soon">
-            <div className="nye-flyer-top">
-              <KnotsMark className="nye-flyer-mark" />
-              <span>KNOTS</span>
-            </div>
-            <div className="nye-flyer-title">NYE</div>
-            <div className="nye-flyer-year">
-              <span>2026</span>
-              <span className="nye-flyer-arrow">→</span>
-              <span>2027</span>
-            </div>
-            <div className="nye-flyer-bottom">
-              <span>{NYE_EVENT.date}</span>
-              <span>Flyer coming soon</span>
-            </div>
-          </div>
-        )}
+        <FlyerLoop />
         <div className="nye-flyer-sheen" aria-hidden />
       </div>
     </div>
@@ -236,7 +264,9 @@ function TicketStub({ ticket, fresh }: { ticket: NyeTicket; fresh: boolean }) {
           <dd className="nye-mono">{ticket.ref}</dd>
         </div>
       </dl>
-      <p className="nye-stub-note">Show this screen or give your name at the door.</p>
+      <p className="nye-stub-note">
+        {ticket.releases ? `${ticket.releases}. ` : ""}Show this screen or give your name at the door.
+      </p>
     </div>
   );
 }
@@ -245,7 +275,9 @@ interface Session {
   clientSecret: string;
   publishableKey: string;
   sessionId: string;
-  quantity: number;
+  /** What the server actually held and is charging for. */
+  lines: QuoteLine[];
+  total: number;
 }
 
 /**
@@ -374,13 +406,21 @@ const Nye = () => {
   }, []);
 
   const state = saleState(availability, failed, now);
-  const price = availability?.price ?? NYE_EVENT.price;
+  const tiers = availability?.tiers ?? NYE_TIERS;
+  const priced = quote(quantity, tiers);
+  const total = priced?.total ?? 0;
 
   const start = async () => {
     if (state !== "on-sale" || starting) return;
     setStarting(true);
     setMessage(null);
-    const { data, error } = await tickets<{ client_secret: string; publishable_key: string; session_id: string; remaining?: number }>({
+    const { data, error } = await tickets<{
+      client_secret: string;
+      publishable_key: string;
+      session_id: string;
+      lines: QuoteLine[];
+      total: number;
+    }>({
       action: "checkout",
       quantity,
       return_url: `${window.location.origin}/nye/`,
@@ -391,7 +431,13 @@ const Nye = () => {
       refresh();
       return;
     }
-    setSession({ clientSecret: data.client_secret, publishableKey: data.publishable_key, sessionId: data.session_id, quantity });
+    setSession({
+      clientSecret: data.client_secret,
+      publishableKey: data.publishable_key,
+      sessionId: data.session_id,
+      lines: data.lines ?? priced?.lines ?? [],
+      total: data.total ?? total,
+    });
   };
 
   const closeSheet = useCallback(() => {
@@ -436,7 +482,6 @@ const Nye = () => {
     [session, onComplete],
   );
 
-  const total = price * quantity;
   const buyLabel =
     state === "sold-out"
       ? "Sold out"
@@ -494,7 +539,7 @@ const Nye = () => {
           <KnotsMark className="nye-home-mark" />
         </Link>
         <span className="nye-header-meta">
-          {NYE_EVENT.date} · {NYE_EVENT.city}
+          {NYE_EVENT.date} · {NYE_EVENT.time}
         </span>
       </header>
 
@@ -511,7 +556,12 @@ const Nye = () => {
             {after ? "Happy New Year" : NYE_EVENT.title}
           </h1>
           <p className="nye-sub nye-rise" style={{ "--i": 3 } as CSSProperties}>
-            {NYE_EVENT.dateLong} · {NYE_EVENT.city}
+            <span>
+              {NYE_EVENT.kind} · {NYE_EVENT.venue}
+            </span>
+            <span>
+              {NYE_EVENT.dateLong} · {NYE_EVENT.time}
+            </span>
           </p>
 
           {!after && (
@@ -529,19 +579,35 @@ const Nye = () => {
           )}
 
           <div className="nye-panel nye-rise" style={{ "--i": 5 } as CSSProperties}>
-            <div className="nye-panel-row">
-              <div>
-                <p className="nye-panel-name">Entry</p>
-                <p className={`nye-panel-left${availability && availability.remaining <= LOW_STOCK ? " is-low" : ""}`}>
-                  {state === "closed" ? "Ticket sales have closed" : availabilityLine(availability)}
-                </p>
-              </div>
-              <p className="nye-panel-price">{dollars(price)}</p>
+            <div className="nye-panel-head">
+              <p className="nye-panel-name">Tickets</p>
+              <p className="nye-panel-cap">{availability?.capacity ?? NYE_EVENT.capacity} only</p>
             </div>
-            {availability && state === "on-sale" && availability.remaining <= LOW_STOCK && (
-              <div className="nye-meter" aria-hidden>
-                <span style={{ width: `${(availability.remaining / availability.capacity) * 100}%` }} />
-              </div>
+            <ul className="nye-tiers">
+              {tiers.map((t, i) => {
+                const st = tierState(t, availability, tiers);
+                const line =
+                  state === "closed"
+                    ? "Sales closed"
+                    : availability
+                      ? tierLine(t, st, tiers[i - 1])
+                      : `${t.capacity} tickets`;
+                const low = st === "on-sale" && /^Only/.test(line);
+                return (
+                  <li key={t.id} className={`nye-tier is-${availability ? st : "next"}${low ? " is-low" : ""}`}>
+                    <div>
+                      <p className="nye-tier-name">{t.name}</p>
+                      <p className="nye-tier-line">{line}</p>
+                    </div>
+                    <p className="nye-tier-price">{dollars(t.price)}</p>
+                  </li>
+                );
+              })}
+            </ul>
+            {state === "on-sale" && priced && priced.lines.length > 1 && (
+              <p className="nye-split">
+                {quantity} tickets: {quoteBreakdown(priced.lines)}
+              </p>
             )}
             <div className="nye-panel-buy">{controls}</div>
             {message && (
@@ -563,8 +629,9 @@ const Nye = () => {
             <span key={k}>
               {Array.from({ length: 4 }, (_, i) => (
                 <span key={i}>
-                  New Year's Eve <i>✦</i> {NYE_EVENT.date} <i>✦</i> {NYE_EVENT.city} <i>✦</i> {availability?.capacity ?? NYE_EVENT.capacity}{" "}
-                  tickets only <i>✦</i> KNOTS <i>✦</i>{" "}
+                  New Year's Eve <i>✦</i> {NYE_EVENT.kind} <i>✦</i> {NYE_EVENT.date} <i>✦</i> {NYE_EVENT.suburb} <i>✦</i>{" "}
+                  {NYE_EVENT.time} <i>✦</i> {availability?.capacity ?? NYE_EVENT.capacity} tickets only <i>✦</i> KNOTS{" "}
+                  <i>✦</i>{" "}
                 </span>
               ))}
             </span>
@@ -572,7 +639,12 @@ const Nye = () => {
         </div>
       </div>
 
-      <div className="nye-dock">{controls}</div>
+      <div className="nye-dock">
+        {state === "on-sale" && priced && priced.lines.length > 1 && (
+          <p className="nye-dock-split">{quoteBreakdown(priced.lines)}</p>
+        )}
+        {controls}
+      </div>
 
       {freshRef && <Confetti key={freshRef} />}
 
@@ -583,9 +655,9 @@ const Nye = () => {
             <div className="nye-sheet-head">
               <div>
                 <p className="nye-sheet-title">
-                  {session.quantity} × NYE entry
+                  {session.lines.map((l) => `${l.quantity} × ${l.name}`).join(" + ")}
                 </p>
-                <p className="nye-sheet-sub">{dollars(price * session.quantity)} AUD · places held for 30 minutes</p>
+                <p className="nye-sheet-sub">{dollars(session.total)} AUD · places held for 30 minutes</p>
               </div>
               <button type="button" className="nye-sheet-close" onClick={closeSheet} aria-label="Close">
                 ×
@@ -604,31 +676,28 @@ const Nye = () => {
 };
 
 const STYLE = `
-  @font-face { font-family: 'NyeManoNegra'; src: url('${wcManoNegraFont}') format('opentype'); font-display: swap; }
-  @font-face { font-family: 'NyeAlteHaas'; src: url('${alteHaasBoldFont}') format('truetype'); font-weight: 700; font-display: swap; }
-  @font-face { font-family: 'NyeAlteHaas'; src: url('${alteHaasRegularFont}') format('truetype'); font-weight: 400; font-display: swap; }
-
   .nye, .nye *, .nye *::before, .nye *::after { box-sizing: border-box; }
   .nye {
     --ink: #fff;
     --muted: rgba(255,255,255,0.56);
     --line: rgba(255,255,255,0.14);
-    --warm: 255, 206, 140;
+    --warm: 255, 112, 64;
     --gx: 50vw; --gy: 30vh;
     position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
     -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
     background: #000; color: var(--ink);
-    font-family: 'NyeAlteHaas', 'Inter', system-ui, sans-serif;
+    font-family: var(--font-body);
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
   }
+  .nye h1, .nye h2, .nye h3 { font-family: var(--font-display); }
 
   .nye-embers, .nye-glow, .nye-grain { position: fixed; inset: 0; pointer-events: none; }
   .nye-embers { width: 100%; height: 100%; z-index: 0; }
   .nye-glow {
     z-index: 0; inset: -10%;
     background:
-      radial-gradient(600px circle at var(--gx) var(--gy), rgba(var(--warm),0.10), transparent 60%),
-      radial-gradient(900px circle at 50% 115%, rgba(var(--warm),0.10), transparent 60%);
+      radial-gradient(600px circle at var(--gx) var(--gy), rgba(var(--warm),0.12), transparent 60%),
+      radial-gradient(900px circle at 50% 115%, rgba(var(--warm),0.12), transparent 60%);
     animation: nyeDrift 18s ease-in-out infinite alternate;
   }
   .nye.has-pointer .nye-glow { animation: none; }
@@ -656,7 +725,7 @@ const STYLE = `
   .nye-home:hover { opacity: 0.7; }
   .nye-home:focus-visible { outline: 1px solid #fff; outline-offset: 2px; }
   .nye-home-mark { width: 34px; height: auto; }
-  .nye-header-meta { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); }
+  .nye-header-meta { font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
 
   .nye-main {
     max-width: 1180px; margin: 0 auto; padding: 14px 20px 40px;
@@ -673,58 +742,47 @@ const STYLE = `
   .nye-flyer-stage { perspective: 1200px; display: flex; justify-content: center; }
   .nye-flyer {
     --rx: 0deg; --ry: 0deg; --sx: 30%; --sy: 20%;
-    position: relative; width: min(100%, 520px); aspect-ratio: 4 / 5;
-    background: #050505; border-radius: 6px; overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 90px -30px rgba(var(--warm),0.28), 0 30px 60px -20px rgba(0,0,0,0.9);
+    position: relative; width: min(100%, 520px); aspect-ratio: 3 / 4;
+    background: #120604 url('${flyerPoster}') center / cover no-repeat; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 90px -30px rgba(var(--warm),0.45), 0 30px 60px -20px rgba(0,0,0,0.9);
     transform: rotateX(var(--rx)) rotateY(var(--ry));
     transform-style: preserve-3d;
     transition: transform .5s cubic-bezier(.2,.7,.2,1);
     animation: nyeFloat 7s ease-in-out infinite;
+    -webkit-touch-callout: none; user-select: none;
   }
   @media (hover: hover) { .nye-flyer:hover { animation-play-state: paused; transition: transform .08s linear; } }
   @keyframes nyeFloat {
     0%, 100% { translate: 0 0; rotate: 0deg; }
     50% { translate: 0 -8px; rotate: -0.6deg; }
   }
-  .nye-flyer-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .nye-flyer-media {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+    pointer-events: none; background: transparent;
+  }
+  /* Never any player chrome, even where autoplay is refused. */
+  .nye-flyer-media::-webkit-media-controls,
+  .nye-flyer-media::-webkit-media-controls-panel,
+  .nye-flyer-media::-webkit-media-controls-overlay-play-button,
+  .nye-flyer-media::-webkit-media-controls-start-playback-button,
+  .nye-flyer-media::-webkit-media-controls-enclosure { display: none !important; -webkit-appearance: none; opacity: 0; }
   .nye-flyer-sheen {
-    position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
-    background: radial-gradient(circle at var(--sx) var(--sy), rgba(255,255,255,0.10), transparent 45%),
-      linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.07) 45%, transparent 60%);
+    position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
+    background: radial-gradient(circle at var(--sx) var(--sy), rgba(255,255,255,0.16), transparent 45%),
+      linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.10) 45%, transparent 60%);
     background-size: 100% 100%, 250% 100%;
     animation: nyeSheen 6s ease-in-out infinite;
   }
   @keyframes nyeSheen { 0% { background-position: 0 0, 120% 0; } 60%, 100% { background-position: 0 0, -120% 0; } }
-  .nye-flyer-placeholder {
-    position: absolute; inset: 14px; border: 1px solid rgba(255,255,255,0.12);
-    display: flex; flex-direction: column; justify-content: space-between; padding: 18px;
-  }
-  .nye-flyer-top, .nye-flyer-bottom {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(255,255,255,0.5);
-  }
-  .nye-flyer-top span { font-weight: 700; color: rgba(255,255,255,0.8); }
-  .nye-flyer-mark { width: 26px; color: rgba(255,255,255,0.85); }
-  .nye-flyer-title {
-    font-family: 'NyeManoNegra', serif; font-size: clamp(110px, 34vw, 210px); line-height: 0.82; text-align: center;
-    color: #fff; text-shadow: 0 0 40px rgba(var(--warm),0.25);
-    margin-top: 8%;
-  }
-  .nye-flyer-year {
-    display: flex; justify-content: center; gap: 14px; align-items: center;
-    font-weight: 700; font-size: clamp(14px, 3.6vw, 20px); letter-spacing: 0.32em; color: rgba(255,255,255,0.75);
-    margin-bottom: auto; margin-top: 6px;
-  }
-  .nye-flyer-arrow { color: rgba(var(--warm),0.9); letter-spacing: 0; animation: nyeNudge 2.4s ease-in-out infinite; }
-  @keyframes nyeNudge { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
 
   /* Info */
-  .nye-eyebrow { font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+  .nye-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
   .nye-title {
-    font-family: 'NyeManoNegra', serif; font-weight: normal; margin: 0;
-    font-size: clamp(52px, 14vw, 104px); line-height: 0.9; letter-spacing: 0.01em;
+    font-family: var(--font-display); font-weight: 600; margin: 0; text-transform: uppercase;
+    font-size: clamp(40px, 11vw, 80px); line-height: 0.95; letter-spacing: -0.01em;
   }
-  .nye-sub { margin: 14px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--muted); }
+  .nye-sub { margin: 16px 0 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+  .nye-sub span:first-child { color: rgba(255,255,255,0.86); }
 
   .nye-countdown { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 26px; max-width: 460px; }
   .nye-countdown-cell {
@@ -733,23 +791,41 @@ const STYLE = `
     overflow: hidden; display: flex; flex-direction: column; gap: 4px;
   }
   .nye-countdown-num {
-    display: block; font-weight: 700; font-size: clamp(28px, 8vw, 40px); line-height: 1; font-variant-numeric: tabular-nums;
+    display: block; font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 8vw, 40px); line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
     animation: nyeTick .45s cubic-bezier(.2,.7,.2,1);
   }
   @keyframes nyeTick { from { transform: translateY(-40%); opacity: 0; filter: blur(3px); } to { transform: none; opacity: 1; filter: none; } }
-  .nye-countdown-label { font-size: 9px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--muted); }
+  .nye-countdown-label { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
 
   .nye-panel {
     margin-top: 26px; max-width: 460px; border: 1px solid var(--line); border-radius: 12px; padding: 18px;
     background: rgba(10,10,10,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .nye-panel-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .nye-panel-name { margin: 0; font-weight: 700; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; }
-  .nye-panel-left { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
-  .nye-panel-left.is-low { color: rgb(var(--warm)); }
-  .nye-panel-price { margin: 0; font-weight: 700; font-size: 26px; line-height: 1; }
-  .nye-meter { height: 3px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 12px; overflow: hidden; }
-  .nye-meter span { display: block; height: 100%; background: rgb(var(--warm)); border-radius: 3px; transition: width .6s; }
+  .nye-panel-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .nye-panel-name { margin: 0; font-weight: 600; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .nye-panel-cap { margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+  .nye-tiers { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+  .nye-tier {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    transition: border-color .3s, background .3s, opacity .3s;
+  }
+  .nye-tier.is-on-sale {
+    border-color: rgba(var(--warm),0.75);
+    background: linear-gradient(135deg, rgba(var(--warm),0.14), rgba(var(--warm),0.03));
+    box-shadow: 0 0 30px -12px rgba(var(--warm),0.7);
+  }
+  .nye-tier.is-next { opacity: 0.55; }
+  .nye-tier.is-sold-out { opacity: 0.45; }
+  .nye-tier.is-sold-out .nye-tier-name, .nye-tier.is-sold-out .nye-tier-price { text-decoration: line-through; text-decoration-thickness: 1px; }
+  .nye-tier-name { margin: 0; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .nye-tier-line { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+  .nye-tier.is-low .nye-tier-line { color: rgb(var(--warm)); }
+  .nye-tier-price { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1; letter-spacing: -0.01em; }
+  .nye-split { margin: 10px 0 0; font-size: 12px; color: rgb(var(--warm)); }
+
   .nye-panel-buy { margin-top: 16px; }
   .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: rgb(var(--warm)); }
   .nye-fine { margin: 14px 0 0; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.4); }
@@ -763,17 +839,17 @@ const STYLE = `
     font-family: inherit; touch-action: manipulation;
   }
   .nye-stepper button:disabled { opacity: 0.25; cursor: default; }
-  .nye-stepper output { min-width: 18px; text-align: center; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .nye-stepper output { min-width: 18px; text-align: center; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
   .nye-cta {
     position: relative; overflow: hidden; flex: 1; height: 54px; border-radius: 999px; border: 0;
     background: #fff; color: #000; cursor: pointer; touch-action: manipulation;
-    font-family: inherit; font-weight: 700; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
-    box-shadow: 0 0 0 0 rgba(var(--warm),0.0), 0 10px 40px -10px rgba(var(--warm),0.55);
+    font-family: var(--font-body); font-weight: 600; font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase;
+    box-shadow: 0 10px 40px -10px rgba(var(--warm),0.6);
     transition: transform .15s, box-shadow .3s, background .3s, color .3s;
   }
   .nye-cta::after {
     content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%;
-    background: linear-gradient(100deg, transparent, rgba(var(--warm),0.55), transparent);
+    background: linear-gradient(100deg, transparent, rgba(var(--warm),0.45), transparent);
     animation: nyeShine 3.2s ease-in-out infinite;
   }
   @keyframes nyeShine { 0% { left: -60%; } 55%, 100% { left: 130%; } }
@@ -797,24 +873,24 @@ const STYLE = `
   @keyframes nyeStubIn { from { transform: translateY(30px) rotate(-3deg) scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
   .nye-stub-head { display: flex; justify-content: space-between; align-items: baseline; }
   .nye-stub .nye-eyebrow { color: rgba(0,0,0,0.5); margin: 0; }
-  .nye-stub-in { font-family: 'NyeManoNegra', serif; font-size: 30px; line-height: 1; }
+  .nye-stub-in { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1; text-transform: uppercase; letter-spacing: -0.01em; }
   .nye-stub-grid {
     display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; margin: 16px 0 0; padding-top: 14px;
     border-top: 1px dashed rgba(0,0,0,0.3);
   }
   .nye-stub-grid div:nth-child(even) { text-align: right; }
-  .nye-stub-grid dt { font-size: 9px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(0,0,0,0.5); }
-  .nye-stub-grid dd { margin: 2px 0 0; font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
-  .nye-mono { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.04em; }
+  .nye-stub-grid dt { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(0,0,0,0.5); }
+  .nye-stub-grid dd { margin: 2px 0 0; font-family: var(--font-display); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+  .nye-mono { font-family: ui-monospace, Menlo, Consolas, monospace !important; letter-spacing: 0.04em; }
   .nye-stub-note { margin: 14px 0 0; font-size: 11px; line-height: 1.5; color: rgba(0,0,0,0.6); }
 
   /* Marquee */
   .nye-marquee {
     border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
     overflow: hidden; white-space: nowrap; padding: 12px 0; margin-bottom: 0;
-    font-weight: 700; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(255,255,255,0.7);
+    font-weight: 500; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(255,255,255,0.7);
   }
-  .nye-marquee-track { display: inline-flex; animation: nyeMarquee 36s linear infinite; }
+  .nye-marquee-track { display: inline-flex; animation: nyeMarquee 40s linear infinite; }
   .nye-marquee i { font-style: normal; color: rgb(var(--warm)); margin: 0 0.6em; }
   @keyframes nyeMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
@@ -823,7 +899,8 @@ const STYLE = `
     position: sticky; bottom: 0; z-index: 4; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.85) 30%, #000);
   }
-  @media (max-width: 899px) { .nye-panel-buy { display: none; } }
+  .nye-dock-split { margin: 0 0 8px; text-align: right; font-size: 11px; letter-spacing: 0.04em; color: rgb(var(--warm)); }
+  @media (max-width: 899px) { .nye-panel-buy, .nye-split { display: none; } }
   @media (min-width: 900px) { .nye-dock { display: none; } }
   @media (max-width: 899px) { .nye-marquee { margin-bottom: 4px; } }
 
@@ -858,7 +935,7 @@ const STYLE = `
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
     padding: 16px 18px; border-bottom: 1px solid rgba(0,0,0,0.08);
   }
-  .nye-sheet-title { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .nye-sheet-title { margin: 0; font-weight: 600; font-size: 12px; line-height: 1.5; letter-spacing: 0.12em; text-transform: uppercase; }
   .nye-sheet-sub { margin: 3px 0 0; font-size: 12px; color: rgba(0,0,0,0.55); }
   .nye-sheet-close {
     width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.06); color: #000;
@@ -869,7 +946,7 @@ const STYLE = `
   @keyframes nyeFade { from { opacity: 0; } to { opacity: 1; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .nye *, .nye *::before, .nye *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    .nye *:not(.nye-flyer-media), .nye *::before, .nye *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
     .nye-rise { opacity: 1; transform: none; }
     .nye-marquee-track { animation: none; }
   }
