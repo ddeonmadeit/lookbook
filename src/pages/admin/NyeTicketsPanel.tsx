@@ -144,6 +144,7 @@ const NyeTicketsPanel = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [held, setHeld] = useState(0);
   const [wallet, setWallet] = useState<WalletStatus | null>(null);
+  const [switchedOff, setSwitchedOff] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -191,6 +192,17 @@ const NyeTicketsPanel = () => {
       .catch(() => {});
   }, [upToDate]);
   const site = wallet?.domains.find((d) => d.domain === "knotsss.com");
+
+  // The owner's sold-out switches (public/nye/controls.json, published with the site).
+  useEffect(() => {
+    fetch(`/nye/controls.json?t=${Date.now()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: { sold_out?: string[]; all_sold_out?: boolean } | null) => {
+        if (!c) return setSwitchedOff([]);
+        setSwitchedOff(c.all_sold_out ? NYE_TIERS.map((t) => t.id) : (c.sold_out ?? []).filter((id) => NYE_TIERS.some((t) => t.id === id)));
+      })
+      .catch(() => setSwitchedOff(null));
+  }, []);
 
   const valid = orders.filter((o) => o.status !== "refunded");
   const sold = valid.reduce((n, o) => n + ticketCount(o), 0);
@@ -312,7 +324,13 @@ const NyeTicketsPanel = () => {
               </span>
               <span className="text-muted-foreground">
                 {t.taken} / {t.capacity}
-                {t.taken >= t.capacity ? " · sold out" : t.onSale ? " · on sale" : ""}
+                {t.taken >= t.capacity
+                  ? " · sold out"
+                  : switchedOff?.includes(t.id)
+                    ? " · marked sold out"
+                    : t.onSale
+                      ? " · on sale"
+                      : ""}
               </span>
             </div>
             <div className="h-1.5 mt-1 rounded-full bg-muted overflow-hidden" aria-hidden>
@@ -322,6 +340,16 @@ const NyeTicketsPanel = () => {
         ))}
       </div>
       {held > 0 && <p className="font-body text-[11px] text-muted-foreground">{held} held by people paying right now.</p>}
+      {switchedOff && (
+        <p className="font-body text-[11px] text-muted-foreground">
+          {switchedOff.length
+            ? `Marked sold out by you: ${NYE_TIERS.filter((t) => switchedOff.includes(t.id))
+                .map((t) => t.name)
+                .join(", ")}. `
+            : ""}
+          Ask Claude to mark any release sold out, or put it back on sale.
+        </p>
+      )}
       {wallet && (
         <p className="font-body text-[11px] flex items-start gap-1.5">
           <Smartphone className="w-3.5 h-3.5 mt-px flex-shrink-0" />

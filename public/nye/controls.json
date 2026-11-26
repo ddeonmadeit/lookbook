@@ -1,0 +1,5 @@
+{
+  "about": "Owner's switches for knotsss.com/nye. Releases listed in sold_out show as sold out and can't be bought, however many are left; all_sold_out does that for every release. Remove an id to put that release back on sale. Release ids: first ($15), second ($20), final ($30). Changes go live about a minute after they're pushed to the live branch.",
+  "sold_out": [],
+  "all_sold_out": false
+}

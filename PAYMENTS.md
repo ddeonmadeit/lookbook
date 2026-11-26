@@ -128,6 +128,16 @@ on the page in `src/lib/nye.ts`.
   Stripe directly and records them. If Resend is set up, the buyer also gets a
   ticket email.
 
+**Marking releases sold out by hand:** `public/nye/controls.json` lists
+releases to switch off (`"sold_out": ["first"]`), or `"all_sold_out": true`
+for everything. A switched-off release shows as sold out and can't be bought,
+however many are left, and the next one goes on sale. Push the change to the
+live branch and it applies within about a minute (the function re-reads it
+every 15 seconds; if the site can't be reached it keeps the last switches it
+saw). The switches can only stop sales — prices and sizes stay in the
+function — so the file can never make a ticket cheaper. The dashboard's NYE
+panel shows what's switched off.
+
 **Switching it on:** deploy the `nye-tickets` function once. The dashboard
 walks you through it (Orders → NYE tickets → Copy code → paste into Supabase →
 Deploy), or with the CLI: `supabase functions deploy nye-tickets`. It uses the
