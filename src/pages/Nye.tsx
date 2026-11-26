@@ -685,7 +685,7 @@ const STYLE = `
     transition: opacity .3s;
   }
   /* The release on sale: the buy button's flowing orange, as its border. */
-  .nye-tier.is-on-sale { box-shadow: 0 6px 18px -12px rgba(255, 110, 20, 0.55); }
+  .nye-tier.is-on-sale { box-shadow: 0 6px 18px -12px rgba(230, 60, 20, 0.55); }
   .nye-tier-flow {
     position: absolute; top: 0; bottom: 0; left: 0; width: 200%; z-index: -2; pointer-events: none;
     background: var(--flow); animation: nyeFlow 3.2s linear infinite;
@@ -720,20 +720,20 @@ const STYLE = `
   }
   .nye-qty:focus { border-bottom: 1px solid rgba(239,232,220,0.5); }
   /*
-   * The buy button: orange with a touch of Tarantino gold, glossy and raised.
+   * The buy button: orange running into the flyer's red, glossy and raised.
    * Every moving part is a transform, so it never costs a repaint. Its label
    * is near-black, the one exception to bone text: bone on orange can't be read.
    */
   .nye-cta {
     --cta-ink: #1c0c03;
     position: relative; overflow: hidden; isolation: isolate; flex: 1; height: 56px; border-radius: 999px; border: 0;
-    background: #ff8716; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
+    background: #f04a12; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
     font-family: var(--font-body); font-weight: 700; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.6),
       inset 0 -3px 0 rgba(140, 40, 0, 0.42),
       inset 0 0 0 1px rgba(120, 35, 0, 0.2),
-      0 10px 22px -10px rgba(255, 110, 20, 0.6),
+      0 10px 22px -10px rgba(230, 60, 20, 0.6),
       0 3px 8px -2px rgba(0, 0, 0, 0.7);
     transition: transform .15s ease, box-shadow .15s ease;
   }
@@ -742,9 +742,10 @@ const STYLE = `
    * width, one repeat per half, slid by half — a seamless loop.
    */
   .nye {
+    /* Warm orange → deep orange → the flyer's red (#d01a12) and back. */
     --flow: linear-gradient(100deg,
-      #ffa21a 0%, #ff8616 12.5%, #ee580c 25%, #ff8616 37.5%,
-      #ffa21a 50%, #ff8616 62.5%, #ee580c 75%, #ff8616 87.5%, #ffa21a 100%);
+      #ff7414 0%, #f04a12 12.5%, #d01a12 25%, #f04a12 37.5%,
+      #ff7414 50%, #f04a12 62.5%, #d01a12 75%, #f04a12 87.5%, #ff7414 100%);
   }
   .nye-cta-flow {
     position: absolute; top: 0; bottom: 0; left: 0; width: 200%; z-index: -2; pointer-events: none;
@@ -755,7 +756,7 @@ const STYLE = `
   /* Gloss across the top half. */
   .nye-cta::before {
     content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
-    background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 42%, rgba(255,255,255,0) 52%, rgba(120,35,0,0) 70%, rgba(120,35,0,0.18) 100%);
+    background: linear-gradient(180deg, rgba(255,214,170,0.42) 0%, rgba(255,214,170,0.12) 42%, rgba(255,214,170,0) 52%, rgba(110,20,0,0) 70%, rgba(110,20,0,0.2) 100%);
   }
   /* A glint that sweeps across now and then. */
   .nye-cta::after {
@@ -764,7 +765,7 @@ const STYLE = `
     transform: translateX(-130%) skewX(-18deg); animation: nyeShine 3.6s ease-in-out infinite;
   }
   @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
-  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 215, 160, 0.5); }
+  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 190, 150, 0.45); }
   @media (hover: hover) { .nye-cta:hover:not(:disabled) { transform: translateY(-1px); } }
   .nye-cta:active:not(:disabled) {
     transform: translateY(1px) scale(0.985);
