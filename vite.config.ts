@@ -17,7 +17,7 @@ const BASE = process.env.VITE_BASE || "/";
  */
 function nyePage(): Plugin {
   const site = "https://knotsss.com";
-  const title = "KNOTS — New Year's Eve";
+  const title = "KNOTS — NYE Rooftop Party";
   const description = "Rooftop party · 175 Cathedral St, Woolloomooloo · 31.12.2026, 6pm–1am.";
   const image = `${site}/nye/og.png`;
   const meta = (attr: "name" | "property", key: string, value: string) =>

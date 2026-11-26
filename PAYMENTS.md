@@ -113,6 +113,11 @@ on the page in `src/lib/nye.ts`.
 
 - Buyers pay inside the page with the same embedded Stripe form as the store —
   card, Apple Pay or Google Pay, no address, no shipping.
+- **Apple Pay / Google Pay** show in the payment form only on a domain
+  registered with Stripe. `nye-tickets` registers knotsss.com (and www) itself
+  the first time it runs — Stripe then handles Apple's verification — and
+  the dashboard's NYE panel says when Apple Pay is ready. Apple Pay must also
+  be switched on in Stripe → Settings → Payment methods (it is by default).
 - Places are held while someone pays (30 minutes, or until they close the
   form), so two people can never buy the last ticket.
 - Each ticket is an order (marked as a ticket), so buyers land in Contacts and

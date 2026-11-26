@@ -29,7 +29,7 @@ import flyerPoster from "@/assets/nye/flyer-poster.jpg";
 
 /**
  * supabase.functions.invoke() reports any non-2xx as a generic error and
- * leaves `data` null; the reason worth showing ("Only 3 left") is in the body.
+ * leaves `data` null; the reason worth showing is in the body.
  */
 async function tickets<T>(body: Record<string, unknown>): Promise<{ data: (T & { error?: string }) | null; error: string | null }> {
   try {
@@ -64,73 +64,17 @@ const stripeFor = (key: string) => {
 const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-/** Warm embers drifting up behind everything. */
-function Embers() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx || reducedMotion()) return;
-    let w = 0;
-    let h = 0;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const resize = () => {
-      w = canvas.clientWidth;
-      h = canvas.clientHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-    const spawn = (anywhere: boolean) => ({
-      x: Math.random() * w,
-      y: anywhere ? Math.random() * h : h + 10,
-      r: 0.5 + Math.random() * 1.7,
-      vy: 0.12 + Math.random() * 0.5,
-      vx: (Math.random() - 0.5) * 0.18,
-      a: 0.15 + Math.random() * 0.55,
-      phase: Math.random() * Math.PI * 2,
-    });
-    const embers = Array.from({ length: w < 640 ? 30 : 56 }, () => spawn(true));
-    let raf = 0;
-    let last = performance.now();
-    const frame = (t: number) => {
-      const step = Math.min(50, t - last) / 16.67;
-      last = t;
-      ctx.clearRect(0, 0, w, h);
-      for (const e of embers) {
-        e.y -= e.vy * step;
-        e.x += (e.vx + Math.sin(t / 1300 + e.phase) * 0.12) * step;
-        if (e.y < -10) Object.assign(e, spawn(false));
-        const flicker = 0.55 + 0.45 * Math.sin(t / 380 + e.phase);
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 150, 100, ${(e.a * flicker).toFixed(3)})`;
-        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-  return <canvas ref={ref} className="nye-embers" aria-hidden />;
-}
-
 /** A burst of confetti, once, when a ticket comes through. */
 function Confetti() {
   const pieces = useMemo(
     () =>
-      Array.from({ length: 42 }, (_, i) => ({
+      Array.from({ length: 36 }, (_, i) => ({
         "--x": `${(Math.random() - 0.5) * 120}vw`,
         "--y": `${-30 - Math.random() * 70}vh`,
         "--r": `${(Math.random() - 0.5) * 1080}deg`,
         "--d": `${1.4 + Math.random() * 1.2}s`,
         "--delay": `${Math.random() * 0.15}s`,
-        "--c": ["#fff", "#ff7a45", "#e8321e", "#ffc9a8"][i % 4],
+        "--c": ["#efe8dc", "#c2452a", "#8f2a17", "#d6caba"][i % 4],
       })) as CSSProperties[],
     [],
   );
@@ -144,7 +88,7 @@ function Confetti() {
   );
 }
 
-const FLYER_ALT = `KNOTS ${NYE_EVENT.title} — ${NYE_EVENT.kind}, ${NYE_EVENT.venue}, ${NYE_EVENT.time}`;
+const FLYER_ALT = `KNOTS ${NYE_EVENT.title} — ${NYE_EVENT.venue}, ${NYE_EVENT.time}`;
 
 /**
  * The flyer, looping like a GIF: a muted inline video with no controls, and
@@ -187,6 +131,7 @@ function FlyerLoop() {
   );
 }
 
+/** The flyer, with a gentle tilt under a mouse (transform only, so it never costs a repaint). */
 function Flyer() {
   const ref = useRef<HTMLDivElement>(null);
   const tilt = (e: React.PointerEvent) => {
@@ -195,28 +140,29 @@ function Flyer() {
     const r = el.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width - 0.5;
     const y = (e.clientY - r.top) / r.height - 0.5;
-    el.style.setProperty("--ry", `${(x * 14).toFixed(2)}deg`);
-    el.style.setProperty("--rx", `${(-y * 14).toFixed(2)}deg`);
-    el.style.setProperty("--sx", `${((x + 0.5) * 100).toFixed(1)}%`);
-    el.style.setProperty("--sy", `${((y + 0.5) * 100).toFixed(1)}%`);
+    el.style.setProperty("--ry", `${(x * 10).toFixed(2)}deg`);
+    el.style.setProperty("--rx", `${(-y * 10).toFixed(2)}deg`);
   };
   const reset = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.removeProperty("--ry");
-    el.style.removeProperty("--rx");
+    ref.current?.style.removeProperty("--ry");
+    ref.current?.style.removeProperty("--rx");
   };
   return (
     <div className="nye-flyer-stage">
       <div ref={ref} className="nye-flyer" onPointerMove={tilt} onPointerLeave={reset}>
         <FlyerLoop />
-        <div className="nye-flyer-sheen" aria-hidden />
       </div>
     </div>
   );
 }
 
-function Countdown({ now }: { now: number }) {
+/** Ticks on its own, so the rest of the page doesn't redraw every second. */
+function Countdown() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
   const { days, hours, minutes, seconds } = countdownParts(NYE_MIDNIGHT - now);
   const cells: Array<[string, string]> = [
     [pad2(days), "Days"],
@@ -242,7 +188,7 @@ function TicketStub({ ticket, fresh }: { ticket: NyeTicket; fresh: boolean }) {
   return (
     <div className={`nye-stub${fresh ? " is-fresh" : ""}`}>
       <div className="nye-stub-head">
-        <span className="nye-eyebrow">Your ticket</span>
+        <span className="nye-stub-label">Your ticket</span>
         <span className="nye-stub-in">You're in</span>
       </div>
       <dl className="nye-stub-grid">
@@ -284,7 +230,6 @@ interface Session {
  * KNOTS mark, back to the countdown.
  */
 const Nye = () => {
-  const [now, setNow] = useState(() => Date.now());
   const [availability, setAvailability] = useState<Availability | null>(null);
   const [failed, setFailed] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -294,10 +239,12 @@ const Nye = () => {
   const [confirming, setConfirming] = useState(false);
   const [owned, setOwned] = useState<NyeTicket[]>(() => savedTickets());
   const [freshRef, setFreshRef] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [after, setAfter] = useState(() => Date.now() >= NYE_MIDNIGHT);
   const ticketRef = useRef<HTMLDivElement>(null);
 
-  // Page identity: its own title, black browser chrome, and never indexed.
+  // Page identity: its own title, black browser chrome, never indexed — and
+  // the page scrolls as the document itself, which is what makes it smooth
+  // on phones (the rest of the site scrolls inside a fixed container).
   useEffect(() => {
     const prevTitle = document.title;
     document.title = `KNOTS — ${NYE_EVENT.title}`;
@@ -306,17 +253,21 @@ const Nye = () => {
     const theme = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     const prevTheme = theme?.content;
     if (theme) theme.content = "#000000";
+    document.documentElement.classList.add("nye-doc");
     return () => {
       document.title = prevTitle;
       robots.remove();
       if (theme && prevTheme) theme.content = prevTheme;
+      document.documentElement.classList.remove("nye-doc", "nye-locked");
     };
   }, []);
 
+  // Midnight is weeks away, beyond what one timer can wait for: check twice a minute.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    if (after) return;
+    const id = setInterval(() => Date.now() >= NYE_MIDNIGHT && setAfter(true), 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [after]);
 
   const refresh = useCallback(async () => {
     const { data, error } = await tickets<Availability>({ action: "availability" });
@@ -328,7 +279,7 @@ const Nye = () => {
     setAvailability(data);
   }, []);
 
-  // What's left, kept fresh while the page is open and on screen.
+  // What's on sale, kept fresh while the page is open and on screen.
   useEffect(() => {
     refresh();
     const id = setInterval(() => document.visibilityState === "visible" && refresh(), 30_000);
@@ -383,28 +334,7 @@ const Nye = () => {
     confirm(sessionId);
   }, [confirm]);
 
-  // The glow follows the pointer.
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || reducedMotion()) return;
-    let raf = 0;
-    const move = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") return;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        root.style.setProperty("--gx", `${e.clientX}px`);
-        root.style.setProperty("--gy", `${e.clientY}px`);
-        root.classList.add("has-pointer");
-      });
-    };
-    window.addEventListener("pointermove", move);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("pointermove", move);
-    };
-  }, []);
-
-  const state = saleState(availability, failed, now);
+  const state = saleState(availability, failed, after ? NYE_MIDNIGHT : Date.now());
   const tiers = tiersOf(availability);
   const price = currentPrice(tiers);
   const total = price * quantity;
@@ -446,6 +376,11 @@ const Nye = () => {
       return null;
     });
   }, [refresh]);
+
+  // The page behind the payment sheet stays put.
+  useEffect(() => {
+    document.documentElement.classList.toggle("nye-locked", Boolean(session));
+  }, [session]);
 
   // If the payment form can't load (a dropped connection, a blocker), say so
   // rather than leave an empty sheet, and give the places back.
@@ -524,14 +459,10 @@ const Nye = () => {
     </div>
   );
 
-  const after = now >= NYE_MIDNIGHT;
-
   return (
-    <div ref={rootRef} className="nye">
+    <div className="nye">
       <style>{STYLE}</style>
-      <Embers />
       <div className="nye-glow" aria-hidden />
-      <div className="nye-grain" aria-hidden />
 
       <header className="nye-header">
         <Link to="/" className="nye-home" aria-label="KNOTS — back to the countdown">
@@ -548,24 +479,19 @@ const Nye = () => {
         </section>
 
         <section className="nye-col-info">
-          <p className="nye-eyebrow nye-rise" style={{ "--i": 1 } as CSSProperties}>
-            KNOTS presents
-          </p>
-          <h1 className="nye-title nye-rise" style={{ "--i": 2 } as CSSProperties}>
+          <h1 className="nye-title nye-rise" style={{ "--i": 1 } as CSSProperties}>
             {after ? "Happy New Year" : NYE_EVENT.title}
           </h1>
-          <p className="nye-sub nye-rise" style={{ "--i": 3 } as CSSProperties}>
-            <span>
-              {NYE_EVENT.kind} · {NYE_EVENT.venue}
-            </span>
+          <p className="nye-sub nye-rise" style={{ "--i": 2 } as CSSProperties}>
+            <span>{NYE_EVENT.venue}</span>
             <span>
               {NYE_EVENT.dateLong} · {NYE_EVENT.time}
             </span>
           </p>
 
           {!after && (
-            <div className="nye-rise" style={{ "--i": 4 } as CSSProperties}>
-              <Countdown now={now} />
+            <div className="nye-rise" style={{ "--i": 3 } as CSSProperties}>
+              <Countdown />
             </div>
           )}
 
@@ -577,10 +503,8 @@ const Nye = () => {
             </div>
           )}
 
-          <div className="nye-panel nye-rise" style={{ "--i": 5 } as CSSProperties}>
-            <div className="nye-panel-head">
-              <p className="nye-panel-name">Tickets</p>
-            </div>
+          <div className="nye-panel nye-rise" style={{ "--i": 4 } as CSSProperties}>
+            <p className="nye-panel-name">Tickets</p>
             <ul className="nye-tiers">
               {tiers.map((t, i) => {
                 const waiting = state === "unavailable";
@@ -603,27 +527,12 @@ const Nye = () => {
               </p>
             )}
             <p className="nye-fine">
-              Prices go up release by release — you'll see your exact total before you pay. Card, Apple Pay or Google
-              Pay, without leaving this page; your ticket appears here straight away.
+              Prices go up release by release — you'll see your exact total before you pay. Apple Pay, Google Pay or
+              card, without leaving this page; your ticket appears here straight away.
             </p>
           </div>
         </section>
       </main>
-
-      <div className="nye-marquee" aria-hidden>
-        <div className="nye-marquee-track">
-          {Array.from({ length: 2 }, (_, k) => (
-            <span key={k}>
-              {Array.from({ length: 4 }, (_, i) => (
-                <span key={i}>
-                  New Year's Eve <i>✦</i> {NYE_EVENT.kind} <i>✦</i> {NYE_EVENT.date} <i>✦</i> {NYE_EVENT.suburb} <i>✦</i>{" "}
-                  {NYE_EVENT.time} <i>✦</i> KNOTS <i>✦</i>{" "}
-                </span>
-              ))}
-            </span>
-          ))}
-        </div>
-      </div>
 
       <div className="nye-dock">{controls}</div>
 
@@ -660,86 +569,76 @@ const Nye = () => {
 };
 
 const STYLE = `
+  /* The page scrolls as the document: smoother on phones than a scrolling box. */
+  html.nye-doc {
+    height: auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: auto;
+    padding: 0; background: #000;
+  }
+  html.nye-doc body { height: auto; min-height: 100%; overflow: visible; background: #000; }
+  html.nye-doc #root { height: auto; }
+  html.nye-doc.nye-locked, html.nye-doc.nye-locked body { overflow: hidden; }
+
   .nye, .nye *, .nye *::before, .nye *::after { box-sizing: border-box; }
   .nye {
-    --ink: #fff;
-    --muted: rgba(255,255,255,0.56);
-    --line: rgba(255,255,255,0.14);
-    --warm: 255, 112, 64;
-    --gx: 50vw; --gy: 30vh;
-    position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-    background: #000; color: var(--ink);
+    /* Every bit of text is bone or light taupe — never grey. */
+    --bone: #efe8dc;
+    --taupe: #d6caba;
+    --line: rgba(239, 232, 220, 0.14);
+    --red: 184, 58, 34;
+    position: relative; min-height: 100vh; min-height: 100dvh;
+    background: #000; color: var(--bone);
     font-family: var(--font-body);
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+    -webkit-font-smoothing: antialiased;
   }
-  .nye h1, .nye h2, .nye h3 { font-family: var(--font-display); }
+  .nye h1 { font-family: var(--font-display); }
 
-  .nye-embers, .nye-glow, .nye-grain { position: fixed; inset: 0; pointer-events: none; }
-  .nye-embers { width: 100%; height: 100%; z-index: 0; }
+  /* One faint, still glow: no animation, nothing to repaint while scrolling. */
   .nye-glow {
-    z-index: 0; inset: -10%;
-    background:
-      radial-gradient(600px circle at var(--gx) var(--gy), rgba(var(--warm),0.12), transparent 60%),
-      radial-gradient(900px circle at 50% 115%, rgba(var(--warm),0.12), transparent 60%);
-    animation: nyeDrift 18s ease-in-out infinite alternate;
-  }
-  .nye.has-pointer .nye-glow { animation: none; }
-  @keyframes nyeDrift {
-    0% { transform: translate3d(-6vw, -4vh, 0); }
-    100% { transform: translate3d(6vw, 4vh, 0); }
-  }
-  .nye-grain {
-    z-index: 3; opacity: 0.09; mix-blend-mode: overlay;
-    inset: -50%;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-    animation: nyeGrain 0.9s steps(4) infinite;
-  }
-  @keyframes nyeGrain {
-    0% { transform: translate(0,0); } 25% { transform: translate(-4%,3%); }
-    50% { transform: translate(3%,-5%); } 75% { transform: translate(-2%,-2%); } 100% { transform: translate(0,0); }
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(70% 45% at 50% 105%, rgba(var(--red), 0.10), transparent 70%);
   }
 
-  .nye-header, .nye-main, .nye-marquee { position: relative; z-index: 2; }
+  .nye-header, .nye-main { position: relative; z-index: 1; }
   .nye-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 18px 20px 6px; max-width: 1180px; margin: 0 auto;
   }
-  .nye-home { color: #fff; display: inline-flex; padding: 6px; margin: -6px; border-radius: 8px; transition: opacity .2s; }
-  .nye-home:hover { opacity: 0.7; }
-  .nye-home:focus-visible { outline: 1px solid #fff; outline-offset: 2px; }
+  .nye-home { color: var(--bone); display: inline-flex; padding: 6px; margin: -6px; border-radius: 8px; transition: opacity .2s; }
+  .nye-home:hover { opacity: 0.75; }
+  .nye-home:focus-visible { outline: 1px solid var(--bone); outline-offset: 2px; }
   .nye-home-mark { width: 34px; height: auto; }
-  .nye-header-meta { font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .nye-header-meta { font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--taupe); }
 
   .nye-main {
-    max-width: 1180px; margin: 0 auto; padding: 14px 20px 40px;
-    display: grid; gap: 30px;
+    max-width: 1180px; margin: 0 auto; padding: 12px 20px 36px;
+    display: grid; gap: 18px;
   }
   @media (min-width: 900px) {
-    .nye-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: center; padding-top: 28px; min-height: calc(100dvh - 140px); }
+    .nye-main {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 32px; align-items: center;
+      padding-top: 24px; min-height: calc(100dvh - 90px);
+    }
+    /* Hug the title column. */
+    .nye-main .nye-flyer-stage { justify-content: flex-end; }
+    .nye-main .nye-title { font-size: clamp(56px, 5.2vw, 76px); }
   }
 
-  .nye-rise { opacity: 0; transform: translateY(18px); animation: nyeRise .9s cubic-bezier(.2,.7,.2,1) forwards; animation-delay: calc(var(--i, 0) * 90ms + 80ms); }
+  .nye-rise { opacity: 0; transform: translateY(14px); animation: nyeRise .8s cubic-bezier(.2,.7,.2,1) forwards; animation-delay: calc(var(--i, 0) * 80ms + 60ms); }
   @keyframes nyeRise { to { opacity: 1; transform: none; } }
 
   /* Flyer */
   .nye-flyer-stage { perspective: 1200px; display: flex; justify-content: center; }
   .nye-flyer {
-    --rx: 0deg; --ry: 0deg; --sx: 30%; --sy: 20%;
+    --rx: 0deg; --ry: 0deg;
     position: relative; width: min(100%, 520px); aspect-ratio: 3 / 4;
     background: #120604 url('${flyerPoster}') center / cover no-repeat; border-radius: 6px; overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 90px -30px rgba(var(--warm),0.45), 0 30px 60px -20px rgba(0,0,0,0.9);
+    box-shadow: 0 0 0 1px rgba(239,232,220,0.06), 0 30px 60px -28px rgba(0,0,0,0.95);
     transform: rotateX(var(--rx)) rotateY(var(--ry));
-    transform-style: preserve-3d;
-    transition: transform .5s cubic-bezier(.2,.7,.2,1);
-    animation: nyeFloat 7s ease-in-out infinite;
+    transition: transform .6s cubic-bezier(.2,.7,.2,1);
     -webkit-touch-callout: none; user-select: none;
   }
-  @media (hover: hover) { .nye-flyer:hover { animation-play-state: paused; transition: transform .08s linear; } }
-  @keyframes nyeFloat {
-    0%, 100% { translate: 0 0; rotate: 0deg; }
-    50% { translate: 0 -8px; rotate: -0.6deg; }
-  }
+  @media (hover: hover) { .nye-flyer:hover { transition-duration: .12s; } }
   .nye-flyer-media {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
     pointer-events: none; background: transparent;
@@ -750,102 +649,84 @@ const STYLE = `
   .nye-flyer-media::-webkit-media-controls-overlay-play-button,
   .nye-flyer-media::-webkit-media-controls-start-playback-button,
   .nye-flyer-media::-webkit-media-controls-enclosure { display: none !important; -webkit-appearance: none; opacity: 0; }
-  .nye-flyer-sheen {
-    position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
-    background: radial-gradient(circle at var(--sx) var(--sy), rgba(255,255,255,0.16), transparent 45%),
-      linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.10) 45%, transparent 60%);
-    background-size: 100% 100%, 250% 100%;
-    animation: nyeSheen 6s ease-in-out infinite;
-  }
-  @keyframes nyeSheen { 0% { background-position: 0 0, 120% 0; } 60%, 100% { background-position: 0 0, -120% 0; } }
 
   /* Info */
-  .nye-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
   .nye-title {
-    font-family: var(--font-display); font-weight: 600; margin: 0; text-transform: uppercase;
-    font-size: clamp(40px, 11vw, 80px); line-height: 0.95; letter-spacing: -0.01em;
+    font-weight: 700; margin: 0; text-transform: uppercase; color: var(--bone);
+    font-size: clamp(42px, 12.5vw, 88px); line-height: 0.9; letter-spacing: -0.025em;
   }
-  .nye-sub { margin: 16px 0 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--muted); }
-  .nye-sub span:first-child { color: rgba(255,255,255,0.86); }
+  .nye-sub { margin: 14px 0 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--taupe); }
+  .nye-sub span:first-child { color: var(--bone); }
 
-  .nye-countdown { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 26px; max-width: 460px; }
+  .nye-countdown { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 22px; max-width: 460px; }
   .nye-countdown-cell {
     border: 1px solid var(--line); border-radius: 8px; padding: 12px 6px 9px; text-align: center;
-    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
-    overflow: hidden; display: flex; flex-direction: column; gap: 4px;
+    background: rgba(239,232,220,0.03); overflow: hidden; display: flex; flex-direction: column; gap: 4px;
   }
   .nye-countdown-num {
-    display: block; font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 8vw, 40px); line-height: 1;
-    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
-    animation: nyeTick .45s cubic-bezier(.2,.7,.2,1);
+    display: block; font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 8vw, 40px); line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--bone);
+    animation: nyeTick .4s cubic-bezier(.2,.7,.2,1);
   }
-  @keyframes nyeTick { from { transform: translateY(-40%); opacity: 0; filter: blur(3px); } to { transform: none; opacity: 1; filter: none; } }
-  .nye-countdown-label { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  @keyframes nyeTick { from { transform: translateY(-35%); opacity: 0; } to { transform: none; opacity: 1; } }
+  .nye-countdown-label { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--taupe); }
 
   .nye-panel {
-    margin-top: 26px; max-width: 460px; border: 1px solid var(--line); border-radius: 12px; padding: 18px;
-    background: rgba(10,10,10,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    margin-top: 22px; max-width: 460px; border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+    background: #0b0908;
   }
-  .nye-panel-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .nye-panel-name { margin: 0; font-weight: 600; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .nye-panel-name { margin: 0; font-weight: 600; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--bone); }
 
   .nye-tiers { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
   .nye-tier {
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
     border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
-    transition: border-color .3s, background .3s, opacity .3s;
+    transition: border-color .3s, background-color .3s, opacity .3s;
   }
-  .nye-tier.is-on-sale {
-    border-color: rgba(var(--warm),0.75);
-    background: linear-gradient(135deg, rgba(var(--warm),0.14), rgba(var(--warm),0.03));
-    box-shadow: 0 0 30px -12px rgba(var(--warm),0.7);
-  }
-  .nye-tier.is-next { opacity: 0.55; }
-  .nye-tier.is-sold-out { opacity: 0.45; }
-  .nye-tier.is-sold-out .nye-tier-line { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.75); }
+  .nye-tier.is-on-sale { border-color: rgba(var(--red), 0.85); background: rgba(var(--red), 0.08); }
+  .nye-tier.is-next { opacity: 0.6; }
+  .nye-tier.is-sold-out { opacity: 0.5; }
   .nye-tier.is-sold-out .nye-tier-name, .nye-tier.is-sold-out .nye-tier-price { text-decoration: line-through; text-decoration-thickness: 1px; }
-  .nye-tier-name { margin: 0; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; }
-  .nye-tier-line { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
-  .nye-tier-price { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1; letter-spacing: -0.01em; }
+  .nye-tier.is-sold-out .nye-tier-line { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; font-weight: 600; color: var(--bone); }
+  .nye-tier-name { margin: 0; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone); }
+  .nye-tier-line { margin: 3px 0 0; font-size: 12px; color: var(--taupe); }
+  .nye-tier-price { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 24px; line-height: 1; letter-spacing: -0.01em; color: var(--bone); }
 
   .nye-panel-buy { margin-top: 16px; }
-  .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: rgb(var(--warm)); }
-  .nye-fine { margin: 14px 0 0; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.4); }
+  .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--bone); }
+  .nye-fine { margin: 14px 0 0; font-size: 11px; line-height: 1.6; color: var(--taupe); }
 
   .nye-buy { display: flex; gap: 10px; align-items: stretch; }
-  .nye-stepper {
-    display: flex; align-items: center; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; flex-shrink: 0;
-  }
+  .nye-stepper { display: flex; align-items: center; border: 1px solid rgba(239,232,220,0.24); border-radius: 999px; flex-shrink: 0; }
   .nye-stepper button {
-    width: 44px; height: 52px; background: none; border: 0; color: #fff; font-size: 20px; cursor: pointer;
+    width: 44px; height: 52px; background: none; border: 0; color: var(--bone); font-size: 20px; cursor: pointer;
     font-family: inherit; touch-action: manipulation;
   }
-  .nye-stepper button:disabled { opacity: 0.25; cursor: default; }
-  .nye-stepper output { min-width: 18px; text-align: center; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .nye-stepper button:disabled { opacity: 0.3; cursor: default; }
+  .nye-stepper output { min-width: 18px; text-align: center; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--bone); }
   .nye-cta {
     position: relative; overflow: hidden; flex: 1; height: 54px; border-radius: 999px; border: 0;
-    background: #fff; color: #000; cursor: pointer; touch-action: manipulation;
+    background: rgb(var(--red)); color: var(--bone); cursor: pointer; touch-action: manipulation;
     font-family: var(--font-body); font-weight: 600; font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase;
-    box-shadow: 0 10px 40px -10px rgba(var(--warm),0.6);
-    transition: transform .15s, box-shadow .3s, background .3s, color .3s;
+    transition: transform .15s, background-color .3s;
   }
   .nye-cta::after {
-    content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%;
-    background: linear-gradient(100deg, transparent, rgba(var(--warm),0.45), transparent);
-    animation: nyeShine 3.2s ease-in-out infinite;
+    content: ""; position: absolute; inset: 0; width: 40%;
+    background: linear-gradient(100deg, transparent, rgba(239,232,220,0.16), transparent);
+    transform: translateX(-120%); animation: nyeShine 3.6s ease-in-out infinite;
   }
-  @keyframes nyeShine { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+  @keyframes nyeShine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(320%); } }
   .nye-cta:active:not(:disabled) { transform: scale(0.97); }
-  .nye-cta:focus-visible { outline: 2px solid rgb(var(--warm)); outline-offset: 3px; }
-  .nye-cta:disabled { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.6); cursor: default; box-shadow: none; }
+  .nye-cta:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+  .nye-cta:disabled { background: transparent; color: var(--taupe); border: 1px solid var(--line); cursor: default; }
   .nye-cta:disabled::after { display: none; }
   .nye-cta span { position: relative; z-index: 1; }
 
   /* Ticket stub */
-  .nye-stubs { display: grid; gap: 12px; margin-top: 26px; max-width: 460px; }
+  .nye-stubs { display: grid; gap: 12px; margin-top: 22px; max-width: 460px; }
   .nye-stub {
-    position: relative; border-radius: 12px; padding: 18px 18px 16px; color: #000;
-    background: linear-gradient(135deg, #fff 0%, #f4efe6 100%);
+    position: relative; border-radius: 12px; padding: 18px 18px 16px; color: var(--bone);
+    background: #15100d; border: 1px solid rgba(239,232,220,0.2);
     -webkit-mask: radial-gradient(circle at 0 62%, transparent 11px, #000 11.5px) left / 51% 100% no-repeat,
                   radial-gradient(circle at 100% 62%, transparent 11px, #000 11.5px) right / 51% 100% no-repeat;
             mask: radial-gradient(circle at 0 62%, transparent 11px, #000 11.5px) left / 51% 100% no-repeat,
@@ -854,36 +735,25 @@ const STYLE = `
   .nye-stub.is-fresh { animation: nyeStubIn .9s cubic-bezier(.2,.9,.25,1.2); }
   @keyframes nyeStubIn { from { transform: translateY(30px) rotate(-3deg) scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
   .nye-stub-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .nye-stub .nye-eyebrow { color: rgba(0,0,0,0.5); margin: 0; }
-  .nye-stub-in { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1; text-transform: uppercase; letter-spacing: -0.01em; }
+  .nye-stub-label { font-size: 11px; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--taupe); }
+  .nye-stub-in { font-family: var(--font-display); font-weight: 700; font-size: 22px; line-height: 1; text-transform: uppercase; letter-spacing: -0.01em; color: var(--bone); }
   .nye-stub-grid {
     display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; margin: 16px 0 0; padding-top: 14px;
-    border-top: 1px dashed rgba(0,0,0,0.3);
+    border-top: 1px dashed rgba(239,232,220,0.28);
   }
   .nye-stub-grid div:nth-child(even) { text-align: right; }
-  .nye-stub-grid dt { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(0,0,0,0.5); }
-  .nye-stub-grid dd { margin: 2px 0 0; font-family: var(--font-display); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+  .nye-stub-grid dt { font-size: 9px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--taupe); }
+  .nye-stub-grid dd { margin: 2px 0 0; font-family: var(--font-display); font-weight: 700; font-size: 15px; overflow-wrap: anywhere; color: var(--bone); }
   .nye-mono { font-family: ui-monospace, Menlo, Consolas, monospace !important; letter-spacing: 0.04em; }
-  .nye-stub-note { margin: 14px 0 0; font-size: 11px; line-height: 1.5; color: rgba(0,0,0,0.6); }
-
-  /* Marquee */
-  .nye-marquee {
-    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-    overflow: hidden; white-space: nowrap; padding: 12px 0; margin-bottom: 0;
-    font-weight: 500; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(255,255,255,0.7);
-  }
-  .nye-marquee-track { display: inline-flex; animation: nyeMarquee 40s linear infinite; }
-  .nye-marquee i { font-style: normal; color: rgb(var(--warm)); margin: 0 0.6em; }
-  @keyframes nyeMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .nye-stub-note { margin: 14px 0 0; font-size: 11px; line-height: 1.5; color: var(--taupe); }
 
   /* Phones: the buy button stays under the thumb */
   .nye-dock {
     position: sticky; bottom: 0; z-index: 4; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.85) 30%, #000);
+    background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.88) 32%, #000);
   }
   @media (max-width: 899px) { .nye-panel-buy { display: none; } }
   @media (min-width: 900px) { .nye-dock { display: none; } }
-  @media (max-width: 899px) { .nye-marquee { margin-bottom: 4px; } }
 
   /* Confetti */
   .nye-confetti { position: fixed; left: 50%; top: 60%; z-index: 60; pointer-events: none; }
@@ -900,36 +770,38 @@ const STYLE = `
   /* Payment sheet */
   .nye-sheet-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
   .nye-sheet-backdrop {
-    position: absolute; inset: 0; border: 0; padding: 0; background: rgba(0,0,0,0.72);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: nyeFade .25s ease;
+    position: absolute; inset: 0; border: 0; padding: 0; background: rgba(0,0,0,0.8); animation: nyeFade .25s ease;
   }
   .nye-sheet {
     position: relative; width: 100%; max-width: 560px; max-height: 94dvh; display: flex; flex-direction: column;
-    background: #fff; color: #000; border-radius: 18px 18px 0 0; overflow: hidden;
+    background: #0d0a08; color: var(--bone); border: 1px solid var(--line); border-bottom: 0;
+    border-radius: 18px 18px 0 0; overflow: hidden;
     animation: nyeUp .38s cubic-bezier(.2,.8,.2,1);
   }
   @media (min-width: 640px) {
     .nye-sheet-wrap { align-items: center; padding: 24px; }
-    .nye-sheet { border-radius: 16px; max-height: 90dvh; }
+    .nye-sheet { border-radius: 16px; border-bottom: 1px solid var(--line); max-height: 90dvh; }
   }
   .nye-sheet-head {
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    padding: 16px 18px; border-bottom: 1px solid rgba(0,0,0,0.08);
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
   }
-  .nye-sheet-title { margin: 0; font-weight: 600; font-size: 12px; line-height: 1.5; letter-spacing: 0.12em; text-transform: uppercase; }
-  .nye-sheet-sub { margin: 3px 0 0; font-size: 12px; color: rgba(0,0,0,0.55); }
+  .nye-sheet-title { margin: 0; font-weight: 600; font-size: 12px; line-height: 1.5; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone); }
+  .nye-sheet-sub { margin: 3px 0 0; font-size: 12px; color: var(--taupe); }
   .nye-sheet-close {
-    width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.06); color: #000;
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--bone);
     font-size: 24px; line-height: 1; cursor: pointer; flex-shrink: 0;
   }
-  .nye-sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 0 calc(16px + env(safe-area-inset-bottom, 0px)); min-height: 360px; }
+  .nye-sheet-body {
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0px)); min-height: 360px;
+  }
   @keyframes nyeUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes nyeFade { from { opacity: 0; } to { opacity: 1; } }
 
   @media (prefers-reduced-motion: reduce) {
     .nye *:not(.nye-flyer-media), .nye *::before, .nye *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
     .nye-rise { opacity: 1; transform: none; }
-    .nye-marquee-track { animation: none; }
   }
 `;
 

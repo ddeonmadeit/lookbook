@@ -23,11 +23,11 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const EVENT = {
   id: "nye-2026",
-  name: "KNOTS New Year's Eve",
+  name: "KNOTS NYE Rooftop Party",
   currency: "aud",
   maxPerOrder: 10,
   /** Shown on Stripe's form and in the email. */
-  details: "Rooftop party · 175 Cathedral St, Woolloomooloo · 31 Dec 2026, 6pm–1am",
+  details: "175 Cathedral St, Woolloomooloo · 31 Dec 2026, 6pm–1am",
   /** Sales close at midnight on New Year's Eve, Sydney time. */
   salesEnd: "2027-01-01T00:00:00+11:00",
 };
@@ -38,8 +38,15 @@ const TIERS = [
   { id: "second", name: "Second release", price: 20, capacity: 33 },
   { id: "final", name: "Final release", price: 30, capacity: 33 },
 ] as const;
-/** Lets the dashboard tell this version from older ones that sold at other prices. */
-const VERSION = 3;
+/** Lets the dashboard tell this version from older ones. */
+const VERSION = 4;
+
+/**
+ * The site's own domains. Apple Pay (and Google Pay) only show in an embedded
+ * Checkout on a domain registered with Stripe — Stripe then handles Apple's
+ * merchant validation itself.
+ */
+const WALLET_DOMAINS = ["knotsss.com", "www.knotsss.com"];
 type TierId = (typeof TIERS)[number]["id"];
 const CAPACITY = TIERS.reduce((n, t) => n + t.capacity, 0);
 
@@ -235,11 +242,11 @@ async function sendTicketEmail(db: SupabaseClient, order: PaidOrder) {
   const value = `${cell}font-size:16px;color:#fff;`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>Your NYE ${plural}</title></head>
 <body style="margin:0;padding:0;background:#000;">
-<div style="display:none;max-height:0;overflow:hidden;">You're in. ${qty} ${plural} for KNOTS NYE, ref ${ref}.</div>
+<div style="display:none;max-height:0;overflow:hidden;">You're in. ${qty} ${plural} for the KNOTS NYE Rooftop Party, ref ${ref}.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#000;padding:40px 16px;"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;border:1px solid #2a2a2a;">
 <tr><td style="${cell}padding:28px 28px 8px;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:#8a8a8a;">KNOTS presents</td></tr>
-<tr><td style="${cell}padding:0 28px 6px;font-size:34px;line-height:1.05;font-weight:bold;letter-spacing:0.02em;text-transform:uppercase;color:#fff;">New Year's Eve</td></tr>
+<tr><td style="${cell}padding:0 28px 6px;font-size:34px;line-height:1.05;font-weight:bold;letter-spacing:0.02em;text-transform:uppercase;color:#fff;">NYE Rooftop Party</td></tr>
 <tr><td style="${cell}padding:0 28px 22px;font-size:12px;line-height:1.6;color:#8a8a8a;">${escapeHtml(EVENT.details)}</td></tr>
 <tr><td style="${cell}padding:0 28px 26px;font-size:14px;line-height:1.7;color:#cfcfcf;">You're in, ${escapeHtml(first)}. Show this email or give your name at the door.</td></tr>
 <tr><td style="padding:0 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px dashed #444;border-bottom:1px dashed #444;">
@@ -250,7 +257,7 @@ async function sendTicketEmail(db: SupabaseClient, order: PaidOrder) {
 </table></td></tr>
 <tr><td style="${cell}padding:18px 28px 28px;font-size:12px;line-height:1.7;color:#8a8a8a;">${escapeHtml(releases)} · paid AUD ${(Number(order.total) || 0).toFixed(2)}. Your ticket is also at <a href="https://knotsss.com/nye" style="color:#fff;">knotsss.com/nye</a> on the device you bought it on.</td></tr>
 </table></td></tr></table></body></html>`;
-  const text = `You're in, ${first}.\n\nKNOTS New Year's Eve\n${EVENT.details}\n\nName: ${order.customer_name}\nAdmits: ${qty} (${releases})\nRef: ${ref}\nPaid: AUD ${(Number(order.total) || 0).toFixed(2)}\n\nShow this email or give your name at the door.`;
+  const text = `You're in, ${first}.\n\nKNOTS NYE Rooftop Party\n${EVENT.details}\n\nName: ${order.customer_name}\nAdmits: ${qty} (${releases})\nRef: ${ref}\nPaid: AUD ${(Number(order.total) || 0).toFixed(2)}\n\nShow this email or give your name at the door.`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -337,6 +344,56 @@ async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: n
   return { error: "Tickets are going fast — please try again." } as const;
 }
 
+interface WalletStatus {
+  domain: string;
+  registered: boolean;
+  apple_pay: string | null;
+  google_pay: string | null;
+}
+
+/**
+ * Makes sure the site's domains are registered for wallets, so Apple Pay
+ * shows in the payment form. Safe to repeat: it only adds what's missing.
+ */
+async function ensureWalletDomains(stripe: Stripe): Promise<WalletStatus[]> {
+  const out: WalletStatus[] = [];
+  for (const domain of WALLET_DOMAINS) {
+    try {
+      const { data } = await stripe.paymentMethodDomains.list({ domain_name: domain, limit: 1 });
+      let pmd = data[0];
+      if (!pmd) pmd = await stripe.paymentMethodDomains.create({ domain_name: domain, enabled: true });
+      else if (!pmd.enabled) pmd = await stripe.paymentMethodDomains.update(pmd.id, { enabled: true });
+      if (pmd.apple_pay?.status !== "active") pmd = await stripe.paymentMethodDomains.validate(pmd.id);
+      out.push({
+        domain,
+        registered: true,
+        apple_pay: pmd.apple_pay?.status ?? null,
+        google_pay: pmd.google_pay?.status ?? null,
+      });
+    } catch (err) {
+      console.error("wallet domain", domain, err);
+      out.push({ domain, registered: false, apple_pay: null, google_pay: null });
+    }
+  }
+  return out;
+}
+
+// Once per running instance is plenty.
+let walletsReady: Promise<WalletStatus[]> | null = null;
+const wallets = (stripe: Stripe) => (walletsReady ??= ensureWalletDomains(stripe).catch(() => ((walletsReady = null), [])));
+
+/** Whether Apple Pay is switched on in the account's payment methods (null if it can't tell). */
+async function applePayOn(stripe: Stripe): Promise<boolean | null> {
+  try {
+    const { data } = await stripe.paymentMethodConfigurations.list({ limit: 100 });
+    const config = data.find((c) => c.is_default && !c.parent) ?? data.find((c) => c.is_default) ?? data[0];
+    return config ? Boolean(config.apple_pay?.available) : null;
+  } catch (err) {
+    console.error("payment method configuration", err);
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -359,6 +416,10 @@ Deno.serve(async (req) => {
     const now = Date.now();
 
     if (!body.action || body.action === "availability") {
+      // Register the domain for Apple Pay in the background, well before anyone pays.
+      const registering = wallets(stripe);
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+      if (runtime) runtime.waitUntil(registering);
       const orders = await ticketOrders(db);
       await settleStaleHolds(db, stripe, orders, now);
       return json(availability(orders.filter((o) => o.status !== "cancelled"), now));
@@ -376,6 +437,7 @@ Deno.serve(async (req) => {
         return json({ error: "Invalid return URL." }, 400);
       }
 
+      await wallets(stripe);
       const held = await hold(db, stripe, quantity, now);
       if ("error" in held) return json({ error: held.error }, 409);
       const { order, lines, total } = held;
@@ -458,6 +520,13 @@ Deno.serve(async (req) => {
         return json({ released: true });
       }
       return json({ released: false, status: session.status });
+    }
+
+    // For the dashboard: is Apple Pay ready to show?
+    if (body.action === "wallets") {
+      walletsReady = null; // check afresh
+      const [domains, enabled] = await Promise.all([wallets(stripe), applePayOn(stripe)]);
+      return json({ domains, apple_pay_enabled: enabled });
     }
 
     return json({ error: "Unknown action." }, 400);

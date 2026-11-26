@@ -8,8 +8,7 @@
 export const NYE_MIDNIGHT = Date.parse("2027-01-01T00:00:00+11:00");
 
 export const NYE_EVENT = {
-  title: "New Year's Eve",
-  kind: "Rooftop party",
+  title: "NYE Rooftop Party",
   date: "31.12.2026",
   dateLong: "Thursday 31 December 2026",
   time: "6pm – 1am",
@@ -34,7 +33,7 @@ export const NYE_TIERS: Tier[] = [
 ];
 
 /** The version of the nye-tickets function this page is built for. */
-export const NYE_VERSION = 3;
+export const NYE_VERSION = 4;
 
 /** A release as the server reports it. Older versions sent counts instead of a status. */
 interface ServerTier {
