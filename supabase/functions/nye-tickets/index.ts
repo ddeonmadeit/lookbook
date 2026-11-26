@@ -17,6 +17,11 @@
 // own number. The browser only ever sends a quantity; prices, caps and every
 // count are decided here — and stay here: the page is only ever told what's
 // on sale, at what price, and what's sold out, never how many.
+//
+// The owner can also mark any release sold out by hand, whatever's left:
+// https://knotsss.com/nye/controls.json (in the repo at public/nye/controls.json)
+// lists the releases to switch off. Those switches can only stop sales —
+// prices and sizes stay here — so the file can never make a ticket cheaper.
 
 import Stripe from "npm:stripe@17";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -39,7 +44,11 @@ const TIERS = [
   { id: "final", name: "Final release", price: 30, capacity: 33 },
 ] as const;
 /** Lets the dashboard tell this version from older ones. */
-const VERSION = 4;
+const VERSION = 5;
+
+/** The owner's sold-out switches, published with the site. */
+const CONTROLS_URL = "https://knotsss.com/nye/controls.json";
+const CONTROLS_TTL = 15_000;
 
 /**
  * The site's own domains. Apple Pay (and Google Pay) only show in an embedded
@@ -48,7 +57,6 @@ const VERSION = 4;
  */
 const WALLET_DOMAINS = ["knotsss.com", "www.knotsss.com"];
 type TierId = (typeof TIERS)[number]["id"];
-const CAPACITY = TIERS.reduce((n, t) => n + t.capacity, 0);
 
 // A ticket is held for whoever is paying for it until their Checkout session
 // expires. 31 minutes is the shortest Stripe allows (30), plus slack for clocks.
@@ -97,21 +105,57 @@ function usage(orders: TicketOrder[]): Usage {
   return used;
 }
 
-const qtyOf = (o: TicketOrder) => o.items.reduce((n, it) => n + (Number(it.quantity) || 0), 0);
 const isSold = (o: TicketOrder) => o.status === "paid" || o.status === "fulfilled";
 const isFreshHold = (o: TicketOrder, now: number) =>
   o.status === "pending" && now - Date.parse(o.created_at) < HOLD_MS;
 
+/** Places a release has left for sale: none if it's full or switched off. */
+const openPlaces = (tier: (typeof TIERS)[number], used: Usage, off: Set<string>) =>
+  off.has(tier.id) ? 0 : Math.max(0, tier.capacity - used[tier.id]);
+
 /** Fills an order from the earliest release with places left. Null if it doesn't fit. */
-function allocate(quantity: number, used: Usage) {
+function allocate(quantity: number, used: Usage, off: Set<string>) {
   const lines: Array<{ tier: (typeof TIERS)[number]; quantity: number }> = [];
   let left = quantity;
   for (const tier of TIERS) {
-    const take = Math.min(left, Math.max(0, tier.capacity - used[tier.id]));
+    const take = Math.min(left, openPlaces(tier, used, off));
     if (take > 0) lines.push({ tier, quantity: take });
     left -= take;
   }
   return left > 0 ? null : lines;
+}
+
+let controls: { at: number; off: Set<string> } | null = null;
+
+/**
+ * The releases the owner has switched off. Read from the site at most every
+ * 15 seconds; if it can't be reached, the last switches seen still apply.
+ */
+async function switchedOff(now = Date.now()): Promise<Set<string>> {
+  if (controls && now - controls.at < CONTROLS_TTL) return controls.off;
+  try {
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 3000);
+    const res = await fetch(`${CONTROLS_URL}?t=${Math.floor(now / CONTROLS_TTL)}`, {
+      signal: timeout.signal,
+      headers: { "Cache-Control": "no-cache" },
+    });
+    clearTimeout(timer);
+    let off = new Set<string>();
+    if (res.ok) {
+      const raw = (await res.json()) as { sold_out?: unknown; all_sold_out?: unknown };
+      const ids = TIERS.map((t) => t.id as string);
+      if (raw?.all_sold_out === true) off = new Set(ids);
+      else if (Array.isArray(raw?.sold_out)) off = new Set(raw.sold_out.filter((x): x is string => ids.includes(x as string)));
+    } else if (res.status !== 404) {
+      throw new Error(`controls: HTTP ${res.status}`);
+    }
+    controls = { at: now, off };
+    return off;
+  } catch (err) {
+    console.error("could not read the sold-out switches:", err);
+    return controls?.off ?? new Set();
+  }
 }
 
 async function ticketOrders(db: SupabaseClient): Promise<TicketOrder[]> {
@@ -187,10 +231,10 @@ async function settleStaleHolds(db: SupabaseClient, stripe: Stripe, orders: Tick
  * What the page may know: each release's price and whether it's on sale,
  * still to come, or sold out. No counts — not even in the response.
  */
-function availability(orders: TicketOrder[], now: number) {
+function availability(orders: TicketOrder[], now: number, off: Set<string>) {
   // An unsettled hold still counts: better a place waits than gets sold twice.
   const taken = usage(orders);
-  const current = TIERS.find((t) => taken[t.id] < t.capacity) ?? null;
+  const current = TIERS.find((t) => openPlaces(t, taken, off) > 0) ?? null;
   const at = current ? TIERS.indexOf(current) : TIERS.length;
   return {
     version: VERSION,
@@ -205,7 +249,7 @@ function availability(orders: TicketOrder[], now: number) {
       id: t.id,
       name: t.name,
       price: t.price,
-      status: i < at ? "sold-out" : i === at ? "on-sale" : "next",
+      status: i < at || off.has(t.id) ? "sold-out" : i === at ? "on-sale" : "next",
     })),
     on_sale: now < Date.parse(EVENT.salesEnd),
   };
@@ -289,15 +333,16 @@ async function sendTicketEmail(db: SupabaseClient, order: PaidOrder) {
  * it — so two people can never both get the last place in a release. Losing
  * that race just means trying again against the new numbers.
  */
-async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: number) {
+async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: number, off: Set<string>) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const before = await ticketOrders(db);
     await settleStaleHolds(db, stripe, before, now);
     const live = before.filter((o) => o.status !== "cancelled");
-    const lines = allocate(quantity, usage(live));
+    const used = usage(live);
+    const lines = allocate(quantity, used, off);
     if (!lines) {
       // Never say how many are left.
-      const left = Math.max(0, CAPACITY - live.reduce((n, o) => n + qtyOf(o), 0));
+      const left = TIERS.reduce((n, t) => n + openPlaces(t, used, off), 0);
       return { error: left === 0 ? "Sold out." : "There aren't that many tickets left — try fewer." } as const;
     }
 
@@ -335,8 +380,8 @@ async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: n
       const at = Date.parse(o.created_at);
       return o.status === "pending" && (at < mine.at || (at === mine.at && o.id < mine.id));
     });
-    const used = usage(ahead);
-    if (lines.every((l) => used[l.tier.id] + l.quantity <= l.tier.capacity)) {
+    const usedAhead = usage(ahead);
+    if (lines.every((l) => usedAhead[l.tier.id] + l.quantity <= l.tier.capacity)) {
       return { order: order as { id: string }, lines, total } as const;
     }
     await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
@@ -420,9 +465,9 @@ Deno.serve(async (req) => {
       const registering = wallets(stripe);
       const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
       if (runtime) runtime.waitUntil(registering);
-      const orders = await ticketOrders(db);
+      const [orders, off] = await Promise.all([ticketOrders(db), switchedOff(now)]);
       await settleStaleHolds(db, stripe, orders, now);
-      return json(availability(orders.filter((o) => o.status !== "cancelled"), now));
+      return json(availability(orders.filter((o) => o.status !== "cancelled"), now, off));
     }
 
     if (body.action === "checkout") {
@@ -437,8 +482,8 @@ Deno.serve(async (req) => {
         return json({ error: "Invalid return URL." }, 400);
       }
 
-      await wallets(stripe);
-      const held = await hold(db, stripe, quantity, now);
+      const [off] = await Promise.all([switchedOff(now), wallets(stripe)]);
+      const held = await hold(db, stripe, quantity, now, off);
       if ("error" in held) return json({ error: held.error }, 409);
       const { order, lines, total } = held;
 

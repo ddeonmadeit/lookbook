@@ -33,7 +33,7 @@ export const NYE_TIERS: Tier[] = [
 ];
 
 /** The version of the nye-tickets function this page is built for. */
-export const NYE_VERSION = 4;
+export const NYE_VERSION = 5;
 
 /** A release as the server reports it. Older versions sent counts instead of a status. */
 interface ServerTier {
