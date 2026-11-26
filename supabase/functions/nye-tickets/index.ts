@@ -12,10 +12,11 @@
 // confirms it or — for someone who paid and closed the tab straight away — the
 // next time anyone loads the page after their hold runs out.
 //
-// Releases sell in order: the second opens once the first is gone. An order
+// Releases sell in order: each opens once the one before is gone. An order
 // that crosses over is split between them, so every release sells exactly its
 // own number. The browser only ever sends a quantity; prices, caps and every
-// count are decided here.
+// count are decided here — and stay here: the page is only ever told what's
+// on sale, at what price, and what's sold out, never how many.
 
 import Stripe from "npm:stripe@17";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -33,9 +34,12 @@ const EVENT = {
 
 /** In the order they sell. Prices in AUD. */
 const TIERS = [
-  { id: "first", name: "First release", price: 20, capacity: 50 },
-  { id: "second", name: "Second release", price: 30, capacity: 50 },
+  { id: "first", name: "First release", price: 15, capacity: 34 },
+  { id: "second", name: "Second release", price: 20, capacity: 33 },
+  { id: "final", name: "Final release", price: 30, capacity: 33 },
 ] as const;
+/** Lets the dashboard tell this version from older ones that sold at other prices. */
+const VERSION = 3;
 type TierId = (typeof TIERS)[number]["id"];
 const CAPACITY = TIERS.reduce((n, t) => n + t.capacity, 0);
 
@@ -172,33 +176,30 @@ async function settleStaleHolds(db: SupabaseClient, stripe: Stripe, orders: Tick
   }
 }
 
+/**
+ * What the page may know: each release's price and whether it's on sale,
+ * still to come, or sold out. No counts — not even in the response.
+ */
 function availability(orders: TicketOrder[], now: number) {
-  const sold = usage(orders.filter(isSold));
   // An unsettled hold still counts: better a place waits than gets sold twice.
-  const held = usage(orders.filter((o) => o.status === "pending"));
-  const tiers = TIERS.map((t) => ({
-    id: t.id,
-    name: t.name,
-    price: t.price,
-    capacity: t.capacity,
-    sold: sold[t.id],
-    held: held[t.id],
-    remaining: Math.max(0, t.capacity - sold[t.id] - held[t.id]),
-  }));
-  const current = tiers.find((t) => t.remaining > 0) ?? null;
-  const total = (k: "sold" | "held" | "remaining") => tiers.reduce((n, t) => n + t[k], 0);
+  const taken = usage(orders);
+  const current = TIERS.find((t) => taken[t.id] < t.capacity) ?? null;
+  const at = current ? TIERS.indexOf(current) : TIERS.length;
   return {
+    version: VERSION,
     name: EVENT.name,
     currency: EVENT.currency.toUpperCase(),
     /** The price of the next ticket. */
-    price: (current ?? tiers[tiers.length - 1]).price,
+    price: (current ?? TIERS[TIERS.length - 1]).price,
     current: current?.id ?? null,
-    capacity: CAPACITY,
+    sold_out: current === null,
     max_per_order: EVENT.maxPerOrder,
-    sold: total("sold"),
-    held: total("held"),
-    remaining: total("remaining"),
-    tiers,
+    tiers: TIERS.map((t, i) => ({
+      id: t.id,
+      name: t.name,
+      price: t.price,
+      status: i < at ? "sold-out" : i === at ? "on-sale" : "next",
+    })),
     on_sale: now < Date.parse(EVENT.salesEnd),
   };
 }
@@ -288,8 +289,9 @@ async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: n
     const live = before.filter((o) => o.status !== "cancelled");
     const lines = allocate(quantity, usage(live));
     if (!lines) {
+      // Never say how many are left.
       const left = Math.max(0, CAPACITY - live.reduce((n, o) => n + qtyOf(o), 0));
-      return { error: left === 0 ? "Sold out." : `Only ${left} ticket${left === 1 ? "" : "s"} left.`, remaining: left } as const;
+      return { error: left === 0 ? "Sold out." : "There aren't that many tickets left — try fewer." } as const;
     }
 
     const total = lines.reduce((n, l) => n + l.tier.price * l.quantity, 0);
@@ -332,7 +334,7 @@ async function hold(db: SupabaseClient, stripe: Stripe, quantity: number, now: n
     }
     await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
   }
-  return { error: "Tickets are going fast — please try again.", remaining: null } as const;
+  return { error: "Tickets are going fast — please try again." } as const;
 }
 
 Deno.serve(async (req) => {
@@ -375,7 +377,7 @@ Deno.serve(async (req) => {
       }
 
       const held = await hold(db, stripe, quantity, now);
-      if ("error" in held) return json({ error: held.error, remaining: held.remaining }, 409);
+      if ("error" in held) return json({ error: held.error }, 409);
       const { order, lines, total } = held;
 
       const metadata = { ticket_order_id: order.id, event: EVENT.id, kind: "ticket" };

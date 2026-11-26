@@ -1,7 +1,8 @@
 // The unlisted /nye ticket page: event details shown on the page, and the
-// small pure helpers it runs on. Price, cap and what's left always come from
-// the nye-tickets edge function — the numbers here are only for display
-// before it answers.
+// small pure helpers it runs on. Prices and what's on sale always come from
+// the nye-tickets edge function — the releases here are only for display
+// before it answers. The page is never told how many tickets there are or
+// how many are left.
 
 /** Midnight on New Year's Eve in Sydney (AEDT, UTC+11), i.e. 2026-12-31T13:00:00Z. */
 export const NYE_MIDNIGHT = Date.parse("2027-01-01T00:00:00+11:00");
@@ -14,57 +15,81 @@ export const NYE_EVENT = {
   time: "6pm – 1am",
   venue: "175 Cathedral St, Woolloomooloo",
   suburb: "Woolloomooloo",
-  capacity: 100,
 };
+
+export type TierState = "on-sale" | "sold-out" | "next";
 
 export interface Tier {
   id: string;
   name: string;
   price: number;
-  capacity: number;
-  sold: number;
-  held: number;
-  remaining: number;
+  status: TierState;
 }
 
-/** The releases as they stand before the server answers: all unsold. */
+/** The releases as shown before the server answers. */
 export const NYE_TIERS: Tier[] = [
-  { id: "first", name: "First release", price: 20, capacity: 50, sold: 0, held: 0, remaining: 50 },
-  { id: "second", name: "Second release", price: 30, capacity: 50, sold: 0, held: 0, remaining: 50 },
+  { id: "first", name: "First release", price: 15, status: "on-sale" },
+  { id: "second", name: "Second release", price: 20, status: "next" },
+  { id: "final", name: "Final release", price: 30, status: "next" },
 ];
 
-/** A release shows how many are left once it's down to this many. */
-export const LOW_STOCK = 20;
+/** The version of the nye-tickets function this page is built for. */
+export const NYE_VERSION = 3;
+
+/** A release as the server reports it. Older versions sent counts instead of a status. */
+interface ServerTier {
+  id: string;
+  name: string;
+  price: number;
+  status?: TierState;
+  remaining?: number;
+}
 
 export interface Availability {
+  /** Missing from versions before 3. */
+  version?: number;
   /** The price of the next ticket. */
   price: number;
-  /** The release on sale now, or null when every release is gone. (Missing from the first, single-price version.) */
+  /** The release on sale now, or null when every release is gone. */
   current?: string | null;
+  sold_out?: boolean;
   currency: string;
-  capacity: number;
   max_per_order: number;
-  sold: number;
-  held: number;
-  remaining: number;
-  /** Missing from the first, single-price version of the function. */
-  tiers?: Tier[];
+  /** Missing from the first, single-price version. */
+  tiers?: ServerTier[];
+  /** Only from the first, single-price version. */
+  remaining?: number;
   on_sale: boolean;
 }
 
-/** Whether the deployed function predates releases (one price for every ticket). */
-export const isSinglePrice = (a: Availability | null) => Boolean(a && !Array.isArray(a.tiers));
+/** Whether the deployed function is older than this page: other prices, or counts it shouldn't share. */
+export const isOutdated = (a: Availability | null) => Boolean(a && a.version !== NYE_VERSION);
 
 /**
- * The releases to show and price by: what the server reports, or — from the
- * first, single-price version — its one price as a single release, so the
- * page never shows a price the server won't charge.
+ * The releases to show and price by, from whichever version is deployed — so
+ * the page never shows a price the server won't charge.
  */
 export function tiersOf(a: Availability | null): Tier[] {
   if (!a) return NYE_TIERS;
-  if (Array.isArray(a.tiers)) return a.tiers;
-  return [{ id: "entry", name: "Entry", price: a.price, capacity: a.capacity, sold: a.sold, held: a.held, remaining: a.remaining }];
+  if (Array.isArray(a.tiers)) {
+    const has = (t: ServerTier) => (t.remaining ?? 1) > 0;
+    const current = a.current !== undefined ? a.current : a.tiers.find(has)?.id;
+    return a.tiers.map((t) => ({
+      id: t.id,
+      name: t.name,
+      price: t.price,
+      status: t.status ?? (!has(t) ? "sold-out" : t.id === current ? "on-sale" : "next"),
+    }));
+  }
+  // The first version: one price for every ticket.
+  return [{ id: "entry", name: "Entry", price: a.price, status: (a.remaining ?? 1) > 0 ? "on-sale" : "sold-out" }];
 }
+
+/**
+ * The price per ticket right now. An order big enough to run into the next
+ * release is split between them; the server says exactly how before payment.
+ */
+export const currentPrice = (tiers: Tier[]) => (tiers.find((t) => t.status === "on-sale") ?? tiers[tiers.length - 1]).price;
 
 export interface NyeTicket {
   ref: string;
@@ -77,6 +102,7 @@ export interface NyeTicket {
   currency: string;
 }
 
+/** A line of what the server held and is charging for. */
 export interface QuoteLine {
   tier: string;
   name: string;
@@ -84,33 +110,8 @@ export interface QuoteLine {
   quantity: number;
 }
 
-/**
- * What `quantity` tickets cost right now: filled from the earliest release
- * with places left, the same way the server charges. Null if they don't fit.
- */
-export function quote(quantity: number, tiers: Tier[]): { lines: QuoteLine[]; total: number } | null {
-  const lines: QuoteLine[] = [];
-  let left = quantity;
-  for (const t of tiers) {
-    const take = Math.min(left, Math.max(0, t.remaining));
-    if (take > 0) lines.push({ tier: t.id, name: t.name, price: t.price, quantity: take });
-    left -= take;
-  }
-  if (left > 0) return null;
-  return { lines, total: lines.reduce((n, l) => n + l.price * l.quantity, 0) };
-}
-
-/** "1 × $20 + 2 × $30" */
-export const quoteBreakdown = (lines: QuoteLine[]) => lines.map((l) => `${l.quantity} × ${dollars(l.price)}`).join(" + ");
-
-export type TierState = "on-sale" | "sold-out" | "next";
-
-/** Sold out, on sale now, or waiting for an earlier release to go. */
-export function tierState(tier: Tier, a: Pick<Availability, "current"> | null, tiers: Tier[]): TierState {
-  if (tier.remaining <= 0) return "sold-out";
-  const current = a && a.current !== undefined ? a.current : tiers.find((t) => t.remaining > 0)?.id;
-  return tier.id === current ? "on-sale" : "next";
-}
+/** "2 × First release + 1 × Second release" */
+export const linesLabel = (lines: QuoteLine[]) => lines.map((l) => `${l.quantity} × ${l.name}`).join(" + ");
 
 export function countdownParts(ms: number) {
   const diff = Math.max(0, ms);
@@ -129,11 +130,8 @@ export function dollars(amount: number) {
   return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
 }
 
-/** The most one order can take right now. */
-export function maxQuantity(a: Pick<Availability, "max_per_order" | "remaining"> | null) {
-  if (!a) return 10;
-  return Math.max(0, Math.min(a.max_per_order, a.remaining));
-}
+/** The most one order can ask for. Not capped by what's left: that would give the number away. */
+export const maxQuantity = (a: Pick<Availability, "max_per_order"> | null) => a?.max_per_order ?? 10;
 
 export type SaleState = "loading" | "unavailable" | "on-sale" | "sold-out" | "closed";
 
@@ -141,14 +139,13 @@ export function saleState(a: Availability | null, failed: boolean, now: number):
   if (now >= NYE_MIDNIGHT) return "closed";
   if (!a) return failed ? "unavailable" : "loading";
   if (!a.on_sale) return "closed";
-  return a.remaining > 0 ? "on-sale" : "sold-out";
+  return tiersOf(a).some((t) => t.status === "on-sale") ? "on-sale" : "sold-out";
 }
 
-/** The line under a release's name. */
-export function tierLine(tier: Tier, state: TierState, previous?: Tier) {
-  if (state === "sold-out") return tier.held > 0 ? "Sold out — held places may free up" : "Sold out";
-  if (state === "next") return previous ? `Opens when ${previous.name.toLowerCase()} sells out` : "Coming soon";
-  if (tier.remaining <= LOW_STOCK) return `Only ${tier.remaining} left`;
+/** The line under a release's name. Never a count. */
+export function tierLine(tier: Tier, previous?: Tier) {
+  if (tier.status === "sold-out") return "Sold out";
+  if (tier.status === "next") return previous ? `Opens when ${previous.name.toLowerCase()} sells out` : "Coming soon";
   return "On sale now";
 }
 

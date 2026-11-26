@@ -11,16 +11,15 @@ import {
   NYE_EVENT,
   NYE_MIDNIGHT,
   countdownParts,
+  currentPrice,
   dollars,
+  linesLabel,
   maxQuantity,
   pad2,
-  quote,
-  quoteBreakdown,
   saleState,
   saveTicket,
   savedTickets,
   tierLine,
-  tierState,
   tiersOf,
 } from "@/lib/nye";
 
@@ -321,7 +320,7 @@ const Nye = () => {
 
   const refresh = useCallback(async () => {
     const { data, error } = await tickets<Availability>({ action: "availability" });
-    if (error || !data || typeof data.remaining !== "number") {
+    if (error || !data || typeof data.price !== "number") {
       setFailed(true);
       return;
     }
@@ -407,8 +406,8 @@ const Nye = () => {
 
   const state = saleState(availability, failed, now);
   const tiers = tiersOf(availability);
-  const priced = quote(quantity, tiers);
-  const total = priced?.total ?? 0;
+  const price = currentPrice(tiers);
+  const total = price * quantity;
 
   const start = async () => {
     if (state !== "on-sale" || starting) return;
@@ -435,7 +434,7 @@ const Nye = () => {
       clientSecret: data.client_secret,
       publishableKey: data.publishable_key,
       sessionId: data.session_id,
-      lines: data.lines ?? priced?.lines ?? [],
+      lines: data.lines ?? [{ tier: "entry", name: "Entry", price, quantity }],
       total: data.total ?? total,
     });
   };
@@ -581,34 +580,22 @@ const Nye = () => {
           <div className="nye-panel nye-rise" style={{ "--i": 5 } as CSSProperties}>
             <div className="nye-panel-head">
               <p className="nye-panel-name">Tickets</p>
-              <p className="nye-panel-cap">{availability?.capacity ?? NYE_EVENT.capacity} only</p>
             </div>
             <ul className="nye-tiers">
               {tiers.map((t, i) => {
-                const st = tierState(t, availability, tiers);
-                const line =
-                  state === "closed"
-                    ? "Sales closed"
-                    : availability
-                      ? tierLine(t, st, tiers[i - 1])
-                      : `${t.capacity} tickets`;
-                const low = st === "on-sale" && /^Only/.test(line);
+                const waiting = state === "unavailable";
+                const line = state === "closed" ? "Sales closed" : waiting ? "" : tierLine(t, tiers[i - 1]);
                 return (
-                  <li key={t.id} className={`nye-tier is-${availability ? st : "next"}${low ? " is-low" : ""}`}>
+                  <li key={t.id} className={`nye-tier is-${waiting ? "next" : t.status}`}>
                     <div>
                       <p className="nye-tier-name">{t.name}</p>
-                      <p className="nye-tier-line">{line}</p>
+                      {line && <p className="nye-tier-line">{line}</p>}
                     </div>
                     <p className="nye-tier-price">{dollars(t.price)}</p>
                   </li>
                 );
               })}
             </ul>
-            {state === "on-sale" && priced && priced.lines.length > 1 && (
-              <p className="nye-split">
-                {quantity} tickets: {quoteBreakdown(priced.lines)}
-              </p>
-            )}
             <div className="nye-panel-buy">{controls}</div>
             {message && (
               <p className="nye-message" role="alert">
@@ -616,8 +603,8 @@ const Nye = () => {
               </p>
             )}
             <p className="nye-fine">
-              Pay with card, Apple Pay or Google Pay without leaving this page. Your ticket appears here straight
-              away.
+              Prices go up release by release — you'll see your exact total before you pay. Card, Apple Pay or Google
+              Pay, without leaving this page; your ticket appears here straight away.
             </p>
           </div>
         </section>
@@ -630,8 +617,7 @@ const Nye = () => {
               {Array.from({ length: 4 }, (_, i) => (
                 <span key={i}>
                   New Year's Eve <i>✦</i> {NYE_EVENT.kind} <i>✦</i> {NYE_EVENT.date} <i>✦</i> {NYE_EVENT.suburb} <i>✦</i>{" "}
-                  {NYE_EVENT.time} <i>✦</i> {availability?.capacity ?? NYE_EVENT.capacity} tickets only <i>✦</i> KNOTS{" "}
-                  <i>✦</i>{" "}
+                  {NYE_EVENT.time} <i>✦</i> KNOTS <i>✦</i>{" "}
                 </span>
               ))}
             </span>
@@ -639,12 +625,7 @@ const Nye = () => {
         </div>
       </div>
 
-      <div className="nye-dock">
-        {state === "on-sale" && priced && priced.lines.length > 1 && (
-          <p className="nye-dock-split">{quoteBreakdown(priced.lines)}</p>
-        )}
-        {controls}
-      </div>
+      <div className="nye-dock">{controls}</div>
 
       {freshRef && <Confetti key={freshRef} />}
 
@@ -654,10 +635,13 @@ const Nye = () => {
           <div className="nye-sheet">
             <div className="nye-sheet-head">
               <div>
-                <p className="nye-sheet-title">
-                  {session.lines.map((l) => `${l.quantity} × ${l.name}`).join(" + ")}
+                <p className="nye-sheet-title">{linesLabel(session.lines)}</p>
+                <p className="nye-sheet-sub">
+                  {session.lines.length > 1
+                    ? `${session.lines.map((l) => `${l.quantity} × ${dollars(l.price)}`).join(" + ")} = `
+                    : ""}
+                  {dollars(session.total)} AUD · places held for 30 minutes
                 </p>
-                <p className="nye-sheet-sub">{dollars(session.total)} AUD · places held for 30 minutes</p>
               </div>
               <button type="button" className="nye-sheet-close" onClick={closeSheet} aria-label="Close">
                 ×
@@ -804,7 +788,6 @@ const STYLE = `
   }
   .nye-panel-head { display: flex; justify-content: space-between; align-items: baseline; }
   .nye-panel-name { margin: 0; font-weight: 600; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
-  .nye-panel-cap { margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 
   .nye-tiers { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
   .nye-tier {
@@ -819,12 +802,11 @@ const STYLE = `
   }
   .nye-tier.is-next { opacity: 0.55; }
   .nye-tier.is-sold-out { opacity: 0.45; }
+  .nye-tier.is-sold-out .nye-tier-line { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.75); }
   .nye-tier.is-sold-out .nye-tier-name, .nye-tier.is-sold-out .nye-tier-price { text-decoration: line-through; text-decoration-thickness: 1px; }
   .nye-tier-name { margin: 0; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; }
   .nye-tier-line { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
-  .nye-tier.is-low .nye-tier-line { color: rgb(var(--warm)); }
   .nye-tier-price { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1; letter-spacing: -0.01em; }
-  .nye-split { margin: 10px 0 0; font-size: 12px; color: rgb(var(--warm)); }
 
   .nye-panel-buy { margin-top: 16px; }
   .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: rgb(var(--warm)); }
@@ -899,8 +881,7 @@ const STYLE = `
     position: sticky; bottom: 0; z-index: 4; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.85) 30%, #000);
   }
-  .nye-dock-split { margin: 0 0 8px; text-align: right; font-size: 11px; letter-spacing: 0.04em; color: rgb(var(--warm)); }
-  @media (max-width: 899px) { .nye-panel-buy, .nye-split { display: none; } }
+  @media (max-width: 899px) { .nye-panel-buy { display: none; } }
   @media (min-width: 900px) { .nye-dock { display: none; } }
   @media (max-width: 899px) { .nye-marquee { margin-bottom: 4px; } }
 

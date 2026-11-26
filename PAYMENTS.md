@@ -100,13 +100,16 @@ An unlisted page selling entry to the New Year's Eve rooftop party (175
 Cathedral St, Woolloomooloo, 6pm–1am): nothing links to it, search engines are
 told not to list it, and its only link goes back to the countdown.
 
-Two releases, sold in order: **first release $20 (50 tickets)**, then
-**second release $30 (50 tickets)**, which opens once the first is gone. An
-order that crosses over is split (3 tickets with 1 first-release left = 1 ×
-$20 + 2 × $30), so each release sells exactly 50. Up to 10 per order; sales
-close at midnight. Releases, prices and dates live at the top of
-`supabase/functions/nye-tickets/index.ts`; the wording on the page, and the
-releases shown before the server answers, in `src/lib/nye.ts`.
+Three releases, sold in order: **first release $15 (34 tickets)**, **second
+release $20 (33)**, then **final release $30 (33)** — each opens once the one
+before sells out. An order that crosses over is split (3 tickets with one $15
+left = 1 × $15 + 2 × $20), and the buyer sees the exact split before paying.
+The page never shows — or is even sent — how many tickets there are or how
+many are left: just each release's price and whether it's on sale, still to
+come, or sold out. Up to 10 per order; sales close at midnight. Releases,
+prices and sizes live at the top of `supabase/functions/nye-tickets/index.ts`
+(the dashboard's copy of the sizes is in `NyeTicketsPanel.tsx`); the wording
+on the page in `src/lib/nye.ts`.
 
 - Buyers pay inside the page with the same embedded Stripe form as the store —
   card, Apple Pay or Google Pay, no address, no shipping.

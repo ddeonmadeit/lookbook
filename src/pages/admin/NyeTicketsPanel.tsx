@@ -4,10 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { type Availability, NYE_EVENT, NYE_TIERS, TICKET_ITEMS, isSinglePrice, ticketCount, ticketRef } from "@/lib/nye";
+import { type Availability, NYE_TIERS, TICKET_ITEMS, isOutdated, tiersOf, ticketCount, ticketRef } from "@/lib/nye";
 
 const projectRef = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split(".")[0];
 const LINK = "https://knotsss.com/nye";
+
+/**
+ * How many tickets each release has — the same numbers as in the nye-tickets
+ * function. Only the dashboard knows them; the ticket page never sees a count.
+ */
+const RELEASE_SIZE: Record<string, number> = { first: 34, second: 33, final: 33 };
+const LAST_RELEASE = NYE_TIERS[NYE_TIERS.length - 1].id;
+// How long a place is held for someone paying (Stripe's 30-minute session, plus slack).
+const HOLD_MS = 33 * 60_000;
 
 interface TicketOrder {
   id: string;
@@ -46,12 +55,12 @@ const TicketsSetup = ({ onCheck, checking, update }: { onCheck: () => void; chec
   return (
     <div className="border border-dashed border-border rounded-md p-3 space-y-3">
       <p className="font-body text-[12px] font-medium">
-        {update ? "Update needed: the live ticket function is the old $30-only version" : "One step to switch ticket sales on"}
+        {update ? "Update needed: the live ticket function is an older version" : "One step to switch ticket sales on"}
       </p>
       {update && (
         <p className="font-body text-[12px] text-muted-foreground leading-relaxed">
-          It sells every ticket at $30. Update it to sell the first release at $20, then the second at $30. The ticket
-          page shows the old $30 price until you do.
+          It sells at old prices. Update it to sell the first release at $15, then $20, then the final release at $30.
+          The ticket page shows the old prices until you do.
         </p>
       )}
       <ol className="list-decimal pl-5 space-y-1.5">
@@ -128,22 +137,28 @@ const NyeTicketsPanel = () => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [held, setHeld] = useState(0);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from("orders")
       .select("id,items,status,customer_name,customer_email,customer_phone,total,currency,created_at")
       .contains("items", TICKET_ITEMS)
-      .in("status", ["paid", "fulfilled", "refunded"])
+      .in("status", ["paid", "fulfilled", "refunded", "pending"])
       .order("created_at", { ascending: false });
-    if (!error) setOrders((data as unknown as TicketOrder[]) ?? []);
+    if (error) return;
+    const rows = (data as unknown as TicketOrder[]) ?? [];
+    // Places held right now by people part-way through paying.
+    const since = Date.now() - HOLD_MS;
+    setHeld(rows.filter((o) => o.status === "pending" && Date.parse(o.created_at) > since).reduce((n, o) => n + ticketCount(o), 0));
+    setOrders(rows.filter((o) => o.status !== "pending"));
   }, []);
 
   const checkLive = useCallback(async () => {
     setChecking(true);
     try {
       const { data, error } = await supabase.functions.invoke("nye-tickets", { body: { action: "availability" } });
-      const ok = !error && typeof (data as Availability | null)?.remaining === "number";
+      const ok = !error && typeof (data as Availability | null)?.price === "number";
       setReachable(ok);
       if (ok) setLive(data as Availability);
       return ok;
@@ -164,18 +179,20 @@ const NyeTicketsPanel = () => {
   const sold = valid.reduce((n, o) => n + ticketCount(o), 0);
   const inside = valid.filter((o) => o.status === "fulfilled").reduce((n, o) => n + ticketCount(o), 0);
   const revenue = valid.reduce((n, o) => n + (Number(o.total) || 0), 0);
-  const capacity = live?.capacity ?? NYE_EVENT.capacity;
+  const capacity = Object.values(RELEASE_SIZE).reduce((n, c) => n + c, 0);
+  const inRelease = (o: TicketOrder, id: string) =>
+    o.items.filter((it) => (it.tier ?? LAST_RELEASE) === id).reduce((m, it) => m + (Number(it.quantity) || 0), 0);
   // Sold per release, from the orders themselves (refunds don't count).
-  const releases = (live?.tiers ?? NYE_TIERS).map((t) => ({
+  const status = live && !isOutdated(live) ? tiersOf(live) : null;
+  const releases = NYE_TIERS.map((t) => ({
     ...t,
-    taken: valid.reduce(
-      (n, o) => n + o.items.filter((it) => (it.tier ?? NYE_TIERS[NYE_TIERS.length - 1].id) === t.id).reduce((m, it) => m + (Number(it.quantity) || 0), 0),
-      0,
-    ),
+    capacity: RELEASE_SIZE[t.id] ?? 0,
+    taken: valid.reduce((n, o) => n + inRelease(o, t.id), 0),
+    onSale: status?.find((x) => x.id === t.id)?.status === "on-sale",
   }));
   const releasesOf = (o: TicketOrder) =>
     NYE_TIERS.map((t) => {
-      const n = o.items.filter((it) => (it.tier ?? NYE_TIERS[NYE_TIERS.length - 1].id) === t.id).reduce((m, it) => m + (Number(it.quantity) || 0), 0);
+      const n = inRelease(o, t.id);
       return n ? `${n} × ${t.name}` : "";
     })
       .filter(Boolean)
@@ -278,7 +295,7 @@ const NyeTicketsPanel = () => {
               </span>
               <span className="text-muted-foreground">
                 {t.taken} / {t.capacity}
-                {t.taken >= t.capacity ? " · sold out" : live?.current === t.id ? " · on sale" : ""}
+                {t.taken >= t.capacity ? " · sold out" : t.onSale ? " · on sale" : ""}
               </span>
             </div>
             <div className="h-1.5 mt-1 rounded-full bg-muted overflow-hidden" aria-hidden>
@@ -287,21 +304,19 @@ const NyeTicketsPanel = () => {
           </div>
         ))}
       </div>
-      {live && live.held > 0 && (
-        <p className="font-body text-[11px] text-muted-foreground">{live.held} held by people paying right now.</p>
-      )}
+      {held > 0 && <p className="font-body text-[11px] text-muted-foreground">{held} held by people paying right now.</p>}
 
       {reachable === false && <TicketsSetup onCheck={async () => (await checkLive()) && toast.success("Ticket sales are on")} checking={checking} />}
-      {reachable && isSinglePrice(live) && (
+      {reachable && isOutdated(live) && (
         <TicketsSetup
           update
           checking={checking}
           onCheck={async () => {
             const { data } = await supabase.functions.invoke("nye-tickets", { body: { action: "availability" } });
             const fresh = data as Availability | null;
-            if (fresh && !isSinglePrice(fresh)) {
+            if (fresh && !isOutdated(fresh)) {
               setLive(fresh);
-              toast.success("Updated — first release $20 is on sale");
+              toast.success("Updated — first release $15 is on sale");
             } else toast.error("Still the old version", { description: "Paste the copied code over the function's code in Supabase and tap Deploy." });
           }}
         />
