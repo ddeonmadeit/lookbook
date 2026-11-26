@@ -506,8 +506,8 @@ Deno.serve(async (req) => {
           submit_type: "pay",
           expires_at: Math.floor(now / 1000) + SESSION_MINUTES * 60,
           metadata,
-          // Card statements read "<account name>* KNOTS NYE", so buyers recognise the charge.
-          payment_intent_data: { metadata, description: `KNOTS NYE × ${quantity}`, statement_descriptor_suffix: "KNOTS NYE" },
+          // Card statements read "KNOTS* NYE TICKETS", so buyers recognise the charge.
+          payment_intent_data: { metadata, description: `KNOTS NYE × ${quantity}`, statement_descriptor_suffix: "NYE TICKETS" },
         });
       } catch (err) {
         await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
