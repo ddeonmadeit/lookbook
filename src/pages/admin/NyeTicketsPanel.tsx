@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { type Availability, NYE_EVENT, NYE_TIERS, TICKET_ITEMS, ticketCount, ticketRef } from "@/lib/nye";
+import { type Availability, NYE_EVENT, NYE_TIERS, TICKET_ITEMS, isSinglePrice, ticketCount, ticketRef } from "@/lib/nye";
 
 const projectRef = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split(".")[0];
 const LINK = "https://knotsss.com/nye";
@@ -35,7 +35,7 @@ async function copyText(text: string) {
  * Turning ticket sales on: the nye-tickets function has to be deployed once.
  * Shown until the page can reach it.
  */
-const TicketsSetup = ({ onCheck, checking }: { onCheck: () => void; checking: boolean }) => {
+const TicketsSetup = ({ onCheck, checking, update }: { onCheck: () => void; checking: boolean; update?: boolean }) => {
   const [code, setCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [show, setShow] = useState(false);
@@ -45,17 +45,34 @@ const TicketsSetup = ({ onCheck, checking }: { onCheck: () => void; checking: bo
   const step = "font-body text-[12px] leading-relaxed";
   return (
     <div className="border border-dashed border-border rounded-md p-3 space-y-3">
-      <p className="font-body text-[12px] font-medium">One step to switch ticket sales on</p>
+      <p className="font-body text-[12px] font-medium">
+        {update ? "Update needed: the live ticket function is the old $30-only version" : "One step to switch ticket sales on"}
+      </p>
+      {update && (
+        <p className="font-body text-[12px] text-muted-foreground leading-relaxed">
+          It sells every ticket at $30. Update it to sell the first release at $20, then the second at $30. The ticket
+          page shows the old $30 price until you do.
+        </p>
+      )}
       <ol className="list-decimal pl-5 space-y-1.5">
         <li className={step}>Tap Copy code.</li>
-        <li className={step}>
-          Open Supabase → Edge Functions → <span className="font-medium">Deploy a new function</span> →{" "}
-          <span className="font-medium">Via editor</span>.
-        </li>
-        <li className={step}>
-          Name it <span className="font-mono">nye-tickets</span>, replace all the code with what you copied, and tap
-          Deploy.
-        </li>
+        {update ? (
+          <li className={step}>
+            Open Supabase → Edge Functions → <span className="font-mono">nye-tickets</span> →{" "}
+            <span className="font-medium">Code</span>, select all the code there and paste over it, then tap Deploy.
+          </li>
+        ) : (
+          <>
+            <li className={step}>
+              Open Supabase → Edge Functions → <span className="font-medium">Deploy a new function</span> →{" "}
+              <span className="font-medium">Via editor</span>.
+            </li>
+            <li className={step}>
+              Name it <span className="font-mono">nye-tickets</span>, replace all the code with what you copied, and
+              tap Deploy.
+            </li>
+          </>
+        )}
         <li className={step}>Come back and tap Check again.</li>
       </ol>
       <div className="flex flex-col sm:flex-row gap-2">
@@ -275,6 +292,20 @@ const NyeTicketsPanel = () => {
       )}
 
       {reachable === false && <TicketsSetup onCheck={async () => (await checkLive()) && toast.success("Ticket sales are on")} checking={checking} />}
+      {reachable && isSinglePrice(live) && (
+        <TicketsSetup
+          update
+          checking={checking}
+          onCheck={async () => {
+            const { data } = await supabase.functions.invoke("nye-tickets", { body: { action: "availability" } });
+            const fresh = data as Availability | null;
+            if (fresh && !isSinglePrice(fresh)) {
+              setLive(fresh);
+              toast.success("Updated — first release $20 is on sale");
+            } else toast.error("Still the old version", { description: "Paste the copied code over the function's code in Supabase and tap Deploy." });
+          }}
+        />
+      )}
 
       <button
         type="button"

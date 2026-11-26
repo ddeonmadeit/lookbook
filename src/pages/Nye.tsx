@@ -10,7 +10,6 @@ import {
   type QuoteLine,
   NYE_EVENT,
   NYE_MIDNIGHT,
-  NYE_TIERS,
   countdownParts,
   dollars,
   maxQuantity,
@@ -22,6 +21,7 @@ import {
   savedTickets,
   tierLine,
   tierState,
+  tiersOf,
 } from "@/lib/nye";
 
 import flyerVideo from "@/assets/nye/flyer.mp4";
@@ -406,7 +406,7 @@ const Nye = () => {
   }, []);
 
   const state = saleState(availability, failed, now);
-  const tiers = availability?.tiers ?? NYE_TIERS;
+  const tiers = tiersOf(availability);
   const priced = quote(quantity, tiers);
   const total = priced?.total ?? 0;
 
