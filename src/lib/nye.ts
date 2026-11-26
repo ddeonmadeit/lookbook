@@ -13,6 +13,7 @@ export const NYE_EVENT = {
   dateLong: "Thursday 31 December 2026",
   time: "6pm – 1am",
   venue: "175 Cathedral St, Woolloomooloo",
+  highlights: "Shisha • DJ's • View of Fireworks",
   suburb: "Woolloomooloo",
 };
 
