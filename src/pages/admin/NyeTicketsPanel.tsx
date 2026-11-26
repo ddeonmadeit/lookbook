@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, Ticket } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, Smartphone, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { type Availability, NYE_TIERS, TICKET_ITEMS, isOutdated, tiersOf, ticketCount, ticketRef } from "@/lib/nye";
@@ -17,6 +17,11 @@ const RELEASE_SIZE: Record<string, number> = { first: 34, second: 33, final: 33 
 const LAST_RELEASE = NYE_TIERS[NYE_TIERS.length - 1].id;
 // How long a place is held for someone paying (Stripe's 30-minute session, plus slack).
 const HOLD_MS = 33 * 60_000;
+
+interface WalletStatus {
+  domains: Array<{ domain: string; registered: boolean; apple_pay: string | null }>;
+  apple_pay_enabled: boolean | null;
+}
 
 interface TicketOrder {
   id: string;
@@ -138,6 +143,7 @@ const NyeTicketsPanel = () => {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [held, setHeld] = useState(0);
+  const [wallet, setWallet] = useState<WalletStatus | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -174,6 +180,17 @@ const NyeTicketsPanel = () => {
     load();
     checkLive();
   }, [load, checkLive]);
+
+  // Apple Pay: the function registers knotsss.com with Stripe; show whether it's ready.
+  const upToDate = reachable && live && !isOutdated(live);
+  useEffect(() => {
+    if (!upToDate) return;
+    supabase.functions
+      .invoke("nye-tickets", { body: { action: "wallets" } })
+      .then(({ data }) => data && setWallet(data as WalletStatus))
+      .catch(() => {});
+  }, [upToDate]);
+  const site = wallet?.domains.find((d) => d.domain === "knotsss.com");
 
   const valid = orders.filter((o) => o.status !== "refunded");
   const sold = valid.reduce((n, o) => n + ticketCount(o), 0);
@@ -305,6 +322,23 @@ const NyeTicketsPanel = () => {
         ))}
       </div>
       {held > 0 && <p className="font-body text-[11px] text-muted-foreground">{held} held by people paying right now.</p>}
+      {wallet && (
+        <p className="font-body text-[11px] flex items-start gap-1.5">
+          <Smartphone className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+          {wallet.apple_pay_enabled === false ? (
+            <span>
+              Apple Pay is switched off in Stripe — turn it on under Stripe → Settings → Payment methods → Apple Pay.
+            </span>
+          ) : site?.apple_pay === "active" ? (
+            <span>Apple Pay is ready on knotsss.com.</span>
+          ) : (
+            <span className="text-muted-foreground">
+              Apple Pay: registering knotsss.com with Stripe{site?.registered ? " — Apple is verifying it" : ""}. Check
+              back in a minute.
+            </span>
+          )}
+        </p>
+      )}
 
       {reachable === false && <TicketsSetup onCheck={async () => (await checkLive()) && toast.success("Ticket sales are on")} checking={checking} />}
       {reachable && isOutdated(live) && (
