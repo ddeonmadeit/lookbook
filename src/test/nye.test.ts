@@ -129,3 +129,17 @@ describe("tickets kept on this device", () => {
     expect(savedTickets()).toEqual([]);
   });
 });
+
+describe("talking to the first, single-price version of the function", () => {
+  it("shows its one price rather than releases it won't charge", async () => {
+    const { tiersOf, isSinglePrice, quote: q, tierState: ts } = await import("@/lib/nye");
+    const old: Availability = { price: 30, currency: "AUD", capacity: 100, max_per_order: 10, sold: 0, held: 0, remaining: 100, on_sale: true };
+    expect(isSinglePrice(old)).toBe(true);
+    const t = tiersOf(old);
+    expect(t).toEqual([{ id: "entry", name: "Entry", price: 30, capacity: 100, sold: 0, held: 0, remaining: 100 }]);
+    expect(q(2, t)?.total).toBe(60);
+    expect(ts(t[0], old, t)).toBe("on-sale");
+    expect(isSinglePrice(avail())).toBe(false);
+    expect(tiersOf(null)[0].price).toBe(20);
+  });
+});

@@ -39,16 +39,31 @@ export const LOW_STOCK = 20;
 export interface Availability {
   /** The price of the next ticket. */
   price: number;
-  /** The release on sale now, or null when every release is gone. */
-  current: string | null;
+  /** The release on sale now, or null when every release is gone. (Missing from the first, single-price version.) */
+  current?: string | null;
   currency: string;
   capacity: number;
   max_per_order: number;
   sold: number;
   held: number;
   remaining: number;
-  tiers: Tier[];
+  /** Missing from the first, single-price version of the function. */
+  tiers?: Tier[];
   on_sale: boolean;
+}
+
+/** Whether the deployed function predates releases (one price for every ticket). */
+export const isSinglePrice = (a: Availability | null) => Boolean(a && !Array.isArray(a.tiers));
+
+/**
+ * The releases to show and price by: what the server reports, or — from the
+ * first, single-price version — its one price as a single release, so the
+ * page never shows a price the server won't charge.
+ */
+export function tiersOf(a: Availability | null): Tier[] {
+  if (!a) return NYE_TIERS;
+  if (Array.isArray(a.tiers)) return a.tiers;
+  return [{ id: "entry", name: "Entry", price: a.price, capacity: a.capacity, sold: a.sold, held: a.held, remaining: a.remaining }];
 }
 
 export interface NyeTicket {
@@ -93,7 +108,7 @@ export type TierState = "on-sale" | "sold-out" | "next";
 /** Sold out, on sale now, or waiting for an earlier release to go. */
 export function tierState(tier: Tier, a: Pick<Availability, "current"> | null, tiers: Tier[]): TierState {
   if (tier.remaining <= 0) return "sold-out";
-  const current = a ? a.current : tiers.find((t) => t.remaining > 0)?.id;
+  const current = a && a.current !== undefined ? a.current : tiers.find((t) => t.remaining > 0)?.id;
   return tier.id === current ? "on-sale" : "next";
 }
 
