@@ -452,7 +452,8 @@ const Nye = () => {
         </div>
       )}
       <button type="button" className="nye-cta" onClick={start} disabled={!canBuy}>
-        <span>{buyLabel}</span>
+        <span className="nye-cta-flow" aria-hidden />
+        <span className="nye-cta-label">{buyLabel}</span>
       </button>
     </div>
   );
@@ -702,23 +703,60 @@ const STYLE = `
     -moz-appearance: textfield; appearance: textfield; outline: none; caret-color: var(--bone);
   }
   .nye-qty:focus { border-bottom: 1px solid rgba(239,232,220,0.5); }
+  /*
+   * The buy button: Tarantino yellow running into orange, glossy and raised.
+   * Every moving part is a transform, so it never costs a repaint. Its label
+   * is near-black, the one exception to bone text: bone on yellow can't be read.
+   */
   .nye-cta {
-    position: relative; overflow: hidden; flex: 1; height: 54px; border-radius: 999px; border: 0;
-    background: rgb(var(--red)); color: var(--bone); cursor: pointer; touch-action: manipulation;
-    font-family: var(--font-body); font-weight: 600; font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase;
-    transition: transform .15s, background-color .3s;
+    --cta-ink: #1c0c03;
+    position: relative; overflow: hidden; isolation: isolate; flex: 1; height: 56px; border-radius: 999px; border: 0;
+    background: #ffb01a; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
+    font-family: var(--font-body); font-weight: 700; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      inset 0 -3px 0 rgba(140, 45, 0, 0.38),
+      inset 0 0 0 1px rgba(120, 40, 0, 0.18),
+      0 10px 22px -10px rgba(255, 128, 20, 0.6),
+      0 3px 8px -2px rgba(0, 0, 0, 0.7);
+    transition: transform .15s ease, box-shadow .15s ease;
   }
+  /* The gradient: twice the button's width, one repeat per half, slid by half — a seamless loop. */
+  .nye-cta-flow {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 200%; z-index: -2; pointer-events: none;
+    background: linear-gradient(100deg,
+      #ffd21f 0%, #ffb01a 12.5%, #ff7a12 25%, #ffb01a 37.5%,
+      #ffd21f 50%, #ffb01a 62.5%, #ff7a12 75%, #ffb01a 87.5%, #ffd21f 100%);
+    animation: nyeFlow 3.2s linear infinite;
+  }
+  @keyframes nyeFlow { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+  /* Gloss across the top half. */
+  .nye-cta::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 42%, rgba(255,255,255,0) 52%, rgba(120,35,0,0) 70%, rgba(120,35,0,0.18) 100%);
+  }
+  /* A glint that sweeps across now and then. */
   .nye-cta::after {
-    content: ""; position: absolute; inset: 0; width: 40%;
-    background: linear-gradient(100deg, transparent, rgba(239,232,220,0.16), transparent);
-    transform: translateX(-120%); animation: nyeShine 3.6s ease-in-out infinite;
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%; z-index: -1; pointer-events: none;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.75), transparent);
+    transform: translateX(-130%) skewX(-18deg); animation: nyeShine 3.6s ease-in-out infinite;
   }
-  @keyframes nyeShine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(320%); } }
-  .nye-cta:active:not(:disabled) { transform: scale(0.97); }
+  @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
+  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 240, 190, 0.55); }
+  @media (hover: hover) { .nye-cta:hover:not(:disabled) { transform: translateY(-1px); } }
+  .nye-cta:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -1px 0 rgba(140, 45, 0, 0.38),
+      inset 0 0 0 1px rgba(120, 40, 0, 0.18),
+      0 4px 10px -6px rgba(255, 128, 20, 0.5),
+      0 1px 3px rgba(0, 0, 0, 0.7);
+  }
   .nye-cta:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
-  .nye-cta:disabled { background: transparent; color: var(--taupe); border: 1px solid var(--line); cursor: default; }
-  .nye-cta:disabled::after { display: none; }
-  .nye-cta span { position: relative; z-index: 1; }
+  .nye-cta:disabled { background: transparent; color: var(--taupe); box-shadow: inset 0 0 0 1px var(--line); cursor: default; }
+  .nye-cta:disabled .nye-cta-flow, .nye-cta:disabled::before, .nye-cta:disabled::after { display: none; }
+  .nye-cta:disabled .nye-cta-label { text-shadow: none; }
 
   /* Ticket stub */
   .nye-stubs { display: grid; gap: 12px; margin-top: 22px; max-width: 460px; }
