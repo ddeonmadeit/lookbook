@@ -511,6 +511,12 @@ const Nye = () => {
                 const line = state === "closed" ? "Sales closed" : waiting ? "" : tierLine(t, tiers[i - 1]);
                 return (
                   <li key={t.id} className={`nye-tier is-${waiting ? "next" : t.status}`}>
+                    {!waiting && t.status === "on-sale" && (
+                      <>
+                        <span className="nye-tier-flow" aria-hidden />
+                        <span className="nye-tier-fill" aria-hidden />
+                      </>
+                    )}
                     <div>
                       <p className="nye-tier-name">{t.name}</p>
                       {line && <p className="nye-tier-line">{line}</p>}
@@ -673,11 +679,21 @@ const STYLE = `
 
   .nye-tiers { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
   .nye-tier {
+    position: relative; isolation: isolate; overflow: hidden;
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
-    transition: border-color .3s, background-color .3s, opacity .3s;
+    border-radius: 10px; padding: 13px 15px; box-shadow: inset 0 0 0 1px var(--line);
+    transition: opacity .3s;
   }
-  .nye-tier.is-on-sale { border-color: rgba(var(--red), 0.85); background: rgba(var(--red), 0.08); }
+  /* The release on sale: the buy button's flowing orange, as its border. */
+  .nye-tier.is-on-sale { box-shadow: 0 6px 18px -12px rgba(255, 110, 20, 0.55); }
+  .nye-tier-flow {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 200%; z-index: -2; pointer-events: none;
+    background: var(--flow); animation: nyeFlow 3.2s linear infinite;
+  }
+  .nye-tier-fill {
+    position: absolute; inset: 1.5px; z-index: -1; pointer-events: none;
+    border-radius: 8.5px; background: #150c07;
+  }
   .nye-tier.is-next { opacity: 0.6; }
   .nye-tier.is-sold-out { opacity: 0.5; }
   .nye-tier.is-sold-out .nye-tier-name, .nye-tier.is-sold-out .nye-tier-price { text-decoration: line-through; text-decoration-thickness: 1px; }
@@ -704,29 +720,35 @@ const STYLE = `
   }
   .nye-qty:focus { border-bottom: 1px solid rgba(239,232,220,0.5); }
   /*
-   * The buy button: Tarantino yellow running into orange, glossy and raised.
+   * The buy button: orange with a touch of Tarantino gold, glossy and raised.
    * Every moving part is a transform, so it never costs a repaint. Its label
-   * is near-black, the one exception to bone text: bone on yellow can't be read.
+   * is near-black, the one exception to bone text: bone on orange can't be read.
    */
   .nye-cta {
     --cta-ink: #1c0c03;
     position: relative; overflow: hidden; isolation: isolate; flex: 1; height: 56px; border-radius: 999px; border: 0;
-    background: #ffb01a; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
+    background: #ff8716; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
     font-family: var(--font-body); font-weight: 700; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.7),
-      inset 0 -3px 0 rgba(140, 45, 0, 0.38),
-      inset 0 0 0 1px rgba(120, 40, 0, 0.18),
-      0 10px 22px -10px rgba(255, 128, 20, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 -3px 0 rgba(140, 40, 0, 0.42),
+      inset 0 0 0 1px rgba(120, 35, 0, 0.2),
+      0 10px 22px -10px rgba(255, 110, 20, 0.6),
       0 3px 8px -2px rgba(0, 0, 0, 0.7);
     transition: transform .15s ease, box-shadow .15s ease;
   }
-  /* The gradient: twice the button's width, one repeat per half, slid by half — a seamless loop. */
+  /*
+   * The flowing gradient (button and on-sale release): twice the element's
+   * width, one repeat per half, slid by half — a seamless loop.
+   */
+  .nye {
+    --flow: linear-gradient(100deg,
+      #ffa21a 0%, #ff8616 12.5%, #ee580c 25%, #ff8616 37.5%,
+      #ffa21a 50%, #ff8616 62.5%, #ee580c 75%, #ff8616 87.5%, #ffa21a 100%);
+  }
   .nye-cta-flow {
     position: absolute; top: 0; bottom: 0; left: 0; width: 200%; z-index: -2; pointer-events: none;
-    background: linear-gradient(100deg,
-      #ffd21f 0%, #ffb01a 12.5%, #ff7a12 25%, #ffb01a 37.5%,
-      #ffd21f 50%, #ffb01a 62.5%, #ff7a12 75%, #ffb01a 87.5%, #ffd21f 100%);
+    background: var(--flow);
     animation: nyeFlow 3.2s linear infinite;
   }
   @keyframes nyeFlow { from { transform: translateX(-50%); } to { transform: translateX(0); } }
@@ -742,7 +764,7 @@ const STYLE = `
     transform: translateX(-130%) skewX(-18deg); animation: nyeShine 3.6s ease-in-out infinite;
   }
   @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
-  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 240, 190, 0.55); }
+  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 215, 160, 0.5); }
   @media (hover: hover) { .nye-cta:hover:not(:disabled) { transform: translateY(-1px); } }
   .nye-cta:active:not(:disabled) {
     transform: translateY(1px) scale(0.985);
