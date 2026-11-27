@@ -396,17 +396,22 @@ const Nye = () => {
   );
 
   const buyLabel =
-    state === "sold-out"
-      ? "Sold out"
-      : state === "closed"
-        ? "Sales closed"
-        : state === "unavailable"
-          ? "On sale soon"
-          : confirming
-            ? "Confirming…"
-            : starting
-              ? "Opening…"
-              : `${owned.length ? "Buy more" : "Get tickets"} · ${dollars(total)}`;
+    state === "sold-out" ? (
+      "Sold out"
+    ) : state === "closed" ? (
+      "Sales closed"
+    ) : state === "unavailable" ? (
+      "On sale soon"
+    ) : confirming ? (
+      "Confirming…"
+    ) : starting ? (
+      "Opening…"
+    ) : (
+      <>
+        <span className="nye-cta-main">{owned.length ? "Buy more" : "Be there"}</span>
+        <span className="nye-cta-price">· {dollars(total)}</span>
+      </>
+    );
   const canBuy = state === "on-sale" && !starting && !confirming;
 
   const controls = (
@@ -765,7 +770,13 @@ const STYLE = `
     transform: translateX(-130%) skewX(-18deg); animation: nyeShine 3.6s ease-in-out infinite;
   }
   @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
-  .nye-cta-label { position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 190, 150, 0.45); }
+  .nye-cta-label {
+    position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 190, 150, 0.45);
+    display: inline-flex; align-items: baseline; justify-content: center; gap: 0.5em; white-space: nowrap;
+  }
+  /* "BE THERE": bigger and bolder, in the display face. The price keeps the button's own style. */
+  .nye-cta-main { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: 0.06em; }
+  .nye-cta-price { font-size: 13px; }
   @media (hover: hover) { .nye-cta:hover:not(:disabled) { transform: translateY(-1px); } }
   .nye-cta:active:not(:disabled) {
     transform: translateY(1px) scale(0.985);
