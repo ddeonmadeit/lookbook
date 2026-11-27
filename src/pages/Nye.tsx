@@ -808,10 +808,6 @@ const Nye = () => {
                 {message}
               </p>
             )}
-            <p className="nye-fine">
-              Prices go up release by release — you'll see your exact total before you pay. Apple Pay, Google Pay or
-              card, without leaving this page; your ticket appears here straight away.
-            </p>
           </div>
 
           <div className="nye-music-fit"><p className="nye-music">{NYE_EVENT.music}</p></div>
@@ -1017,7 +1013,6 @@ const STYLE = `
   .nye-rooftop-media::-webkit-media-controls-start-playback-button,
   .nye-rooftop-media::-webkit-media-controls-enclosure { display: none !important; -webkit-appearance: none; opacity: 0; }
   .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--bone); }
-  .nye-fine { margin: 14px 0 0; font-size: 11px; line-height: 1.6; color: var(--taupe); }
 
   .nye-buy { display: flex; gap: 10px; align-items: stretch; }
   .nye-stepper { display: flex; align-items: center; border: 1px solid rgba(239,232,220,0.24); border-radius: 999px; flex-shrink: 0; }
