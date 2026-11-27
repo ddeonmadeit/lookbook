@@ -4,6 +4,7 @@ import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
 import { supabase } from "@/integrations/supabase/client";
 import { afterPageLoad } from "@/lib/pageLoad";
+import { decodeFrame, frameAt, splitFrames } from "@/lib/frames";
 import KnotsMark from "@/components/KnotsMark";
 import {
   type Availability,
@@ -27,7 +28,7 @@ import {
 import flyerLoop from "@/assets/nye/flyer.webp";
 import flyerPoster from "@/assets/nye/flyer-poster.jpg";
 import rooftopVideo from "@/assets/nye/rooftop.mp4";
-import rooftopFallback from "@/assets/nye/rooftop-fallback.webp";
+import rooftopFrames from "@/assets/nye/rooftop-frames.bin?url";
 import rooftopPoster from "@/assets/nye/rooftop-poster.jpg";
 import loadingSpinner from "@/assets/loading-spinner.gif";
 
@@ -140,25 +141,99 @@ function Flyer() {
 
 const ROOFTOP_ALT = "The rooftop on New Year's Eve: the city skyline and fireworks over Sydney";
 
+const ROOFTOP_FPS = 30;
+
+/**
+ * The rooftop clip as stills on a canvas, for phones that won't play the video. Each tick draws the
+ * frame for the moment it is, so it runs at true speed however slow the phone: frames get skipped,
+ * never stretched. (An animated image would play in slow motion instead.)
+ */
+function FrameLoop({ onShown }: { onShown: () => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    let live = true;
+    let frames: Blob[] = [];
+    let raf = 0;
+    let onScreen = false;
+    let drawn = -1;
+    let busy = false;
+    let started = 0;
+    const stop = new AbortController();
+    const draw = (index: number) => {
+      busy = true;
+      decodeFrame(frames[index])
+        .then((frame) => {
+          if (!live) return frame.close();
+          if (canvas.width !== frame.width || canvas.height !== frame.height) {
+            canvas.width = frame.width;
+            canvas.height = frame.height;
+          }
+          ctx.drawImage(frame.source, 0, 0);
+          frame.close();
+          if (drawn < 0) onShown();
+          drawn = index;
+          canvas.dataset.frame = String(index);
+        })
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    };
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      // Rest while off screen (once there's a first frame up) or while the page is hidden.
+      if (busy || document.hidden || (drawn >= 0 && !onScreen)) return;
+      if (!started) started = now;
+      const index = frameAt(now - started, ROOFTOP_FPS, frames.length);
+      if (index !== drawn) draw(index);
+    };
+    const seen = new IntersectionObserver(
+      ([entry]) => {
+        onScreen = entry.isIntersecting;
+      },
+      { rootMargin: "100px 0px" },
+    );
+    seen.observe(canvas);
+    fetch(rooftopFrames, { signal: stop.signal })
+      .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(String(res.status)))))
+      .then((buf) => {
+        if (!live) return;
+        frames = splitFrames(buf);
+        if (frames.length) raf = requestAnimationFrame(tick);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      stop.abort();
+      cancelAnimationFrame(raf);
+      seen.disconnect();
+    };
+  }, [onShown]);
+  return <canvas ref={ref} className="nye-rooftop-media nye-rooftop-frames" role="img" aria-label={ROOFTOP_ALT} />;
+}
+
 /**
  * The rooftop clip under the tickets: silent (no audio track at all), looping, no controls. It
- * downloads whole as soon as the page has loaded, so it's ready by the time anyone scrolls down,
- * and plays from memory while it's on screen. The store's loading spinner shows until it's actually
- * moving. A phone that won't play video by itself (iPhone Low Power Mode, some in-app browsers)
- * gets an animated copy at the same frame rate instead, and so does one where the video won't move.
+ * downloads whole as soon as the page has loaded and plays from memory while it's on screen, with
+ * the store's loading spinner until it's moving. A phone that won't play it (iPhone Low Power Mode,
+ * some in-app browsers) gets the same clip as clock-timed stills instead (FrameLoop), and the first
+ * tap anywhere on the page, which phones count as permission, switches it to the real video.
  */
 function RooftopLoop() {
   const ref = useRef<HTMLVideoElement>(null);
-  const [asImage, setAsImage] = useState(false);
+  const unlocked = useRef(false);
+  const [mode, setMode] = useState<"video" | "frames">("video");
   const [src, setSrc] = useState<string>();
-  // Which one has shown itself: the video once it's moving, the animated copy once it's loaded.
-  const [shown, setShown] = useState<"video" | "image" | null>(null);
-  const showing = shown === (asImage ? "image" : "video");
+  // Which one has shown itself: the video once it's moving, the stills once the first is drawn.
+  const [shown, setShown] = useState<"video" | "frames" | null>(null);
+  const framesShown = useCallback(() => setShown("frames"), []);
 
   // Download the clip whole once the page itself has loaded. Playing from memory, it starts the
   // moment it's on screen and loops without ever waiting on the network.
   useEffect(() => {
-    if (asImage) return;
     let live = true;
     let url: string | undefined;
     const stop = new AbortController();
@@ -182,39 +257,55 @@ function RooftopLoop() {
       stop.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [asImage]);
+  }, []);
 
-  // Play while it's on screen, rest while it's not.
+  // The video: play while it's on screen, rest while it's not.
   useEffect(() => {
     const video = ref.current;
-    if (asImage || !video || !src) return;
+    if (mode !== "video" || !video || !src) return;
     video.defaultMuted = true;
     video.muted = true;
     video.setAttribute("muted", "");
     let onScreen = false;
+    let asking = false; // the first, early play() hasn't answered yet
     let lastTime = -1;
     let stuckFor = 0;
+    const toFrames = () => setMode("frames");
     const giveUp = () => {
-      // Couldn't play from memory: try streaming it before settling for the animated copy.
+      // Couldn't play from memory: try streaming it before settling for the stills.
       if (src.startsWith("blob:")) setSrc(rooftopVideo);
-      else setAsImage(true);
+      else toFrames();
     };
-    const play = () => {
-      if (!onScreen || document.hidden) return;
-      video.play()?.catch((err: DOMException) => {
-        // Refused outright (Low Power Mode): it never will. An AbortError is just our own pause
-        // getting in first.
-        if (err?.name === "NotAllowedError") setAsImage(true);
-        else if (err?.name !== "AbortError") giveUp();
-      });
+    const play = (evenOffScreen = false) => {
+      if ((!onScreen && !evenOffScreen) || document.hidden) return;
+      const answer = video.play();
+      if (evenOffScreen) asking = !!answer;
+      answer?.then(
+        () => {
+          asking = false;
+          // It can play: nothing left to load, so the spinner goes even if it now rests off screen.
+          setShown("video");
+          if (!onScreen) video.pause();
+        },
+        (err: DOMException) => {
+          asking = false;
+          // Refused outright (Low Power Mode): it won't without a tap. An AbortError is just our
+          // own pause getting in first.
+          if (err?.name === "NotAllowedError") toFrames();
+          else if (err?.name !== "AbortError") giveUp();
+        },
+      );
     };
-    // Only ever asked to play once it's actually on screen: phones won't start a video they can't see.
     const seen = new IntersectionObserver(([entry]) => {
       onScreen = entry.isIntersecting;
       if (onScreen) play();
-      else video.pause();
+      // Pausing now would cut the early question off unanswered; it rests itself once answered.
+      else if (!asking) video.pause();
     });
     seen.observe(video);
+    // Ask once straight away, so a phone that refuses is found out (and the stills fetched) before
+    // anyone scrolls down. If it says yes, it rests until it's on screen.
+    play(true);
     const onMoving = () => video.currentTime > 0 && !video.paused && setShown("video");
     // Stopped by the phone rather than by us: start again.
     const onPause = () => onScreen && !document.hidden && setTimeout(play, 250);
@@ -222,14 +313,15 @@ function RooftopLoop() {
       video.currentTime = 0;
       play();
     };
+    const onCanPlay = () => play();
     const onVisible = () => !document.hidden && play();
     video.addEventListener("timeupdate", onMoving);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
-    video.addEventListener("canplay", play);
+    video.addEventListener("canplay", onCanPlay);
     document.addEventListener("visibilitychange", onVisible);
-    // On screen but not moving: nudge it, and if it still won't go, switch to the animated copy.
-    // A clip still streaming in gets longer than one already in memory.
+    // On screen but not moving: nudge it, and if it still won't go, switch to the stills. A clip
+    // still streaming in gets longer than one already in memory.
     const watchdog = setInterval(() => {
       if (!onScreen || document.hidden) {
         stuckFor = 0;
@@ -241,7 +333,7 @@ function RooftopLoop() {
         return;
       }
       stuckFor += 1;
-      if (stuckFor >= (video.readyState >= 2 ? 3 : 8)) setAsImage(true);
+      if (stuckFor >= (video.readyState >= 2 ? 3 : 8)) toFrames();
       else play();
     }, 1000);
     return () => {
@@ -250,43 +342,60 @@ function RooftopLoop() {
       video.removeEventListener("timeupdate", onMoving);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
-      video.removeEventListener("canplay", play);
+      video.removeEventListener("canplay", onCanPlay);
       document.removeEventListener("visibilitychange", onVisible);
+      video.pause();
     };
-  }, [asImage, src]);
+  }, [mode, src]);
+
+  // Showing the stills: the first tap anywhere on the page lets the phone play the real video.
+  useEffect(() => {
+    const video = ref.current;
+    if (mode !== "frames" || !video || !src || unlocked.current) return;
+    const events = ["pointerup", "touchend", "click", "keydown"] as const;
+    const unlock = () => {
+      video.muted = true;
+      video.play()?.then(
+        () => {
+          unlocked.current = true;
+          setMode("video");
+        },
+        () => {},
+      );
+    };
+    for (const type of events) document.addEventListener(type, unlock, { capture: true, passive: true });
+    return () => {
+      for (const type of events) document.removeEventListener(type, unlock, { capture: true });
+    };
+  }, [mode, src]);
+
+  // Stills stay up until the video takes over, so switching never flashes.
+  const framesOn = mode === "frames" || shown === "frames";
+  const loading = shown === null || (mode === "frames" && shown !== "frames");
 
   return (
     <div className="nye-rooftop">
-      {asImage ? (
-        <img
-          src={rooftopFallback}
-          alt={ROOFTOP_ALT}
-          className="nye-rooftop-media"
-          decoding="async"
-          draggable={false}
-          onLoad={() => setShown("image")}
-        />
-      ) : (
-        <video
-          ref={ref}
-          className="nye-rooftop-media"
-          src={src}
-          poster={rooftopPoster}
-          muted
-          loop
-          playsInline
-          preload="auto"
-          controls={false}
-          disablePictureInPicture
-          tabIndex={-1}
-          aria-label={ROOFTOP_ALT}
-          onError={() => {
-            if (src?.startsWith("blob:")) setSrc(rooftopVideo);
-            else if (src) setAsImage(true);
-          }}
-        />
-      )}
-      {!showing && (
+      <video
+        ref={ref}
+        className="nye-rooftop-media"
+        src={src}
+        poster={rooftopPoster}
+        muted
+        loop
+        playsInline
+        preload="auto"
+        controls={false}
+        disablePictureInPicture
+        tabIndex={-1}
+        aria-label={ROOFTOP_ALT}
+        aria-hidden={framesOn || undefined}
+        onError={() => {
+          if (src?.startsWith("blob:")) setSrc(rooftopVideo);
+          else if (src) setMode("frames");
+        }}
+      />
+      {framesOn && <FrameLoop onShown={framesShown} />}
+      {loading && (
         <div className="nye-rooftop-loading">
           <img src={loadingSpinner} alt="Loading" className="nye-rooftop-spinner" draggable={false} />
         </div>
@@ -896,6 +1005,7 @@ const STYLE = `
     background: rgba(6, 4, 3, 0.55);
   }
   .nye-rooftop-spinner { width: 40px; height: 40px; object-fit: contain; filter: invert(1) sepia(0.18) brightness(0.96); }
+  .nye-rooftop-frames { z-index: 0; }
   .nye-rooftop-media {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
     pointer-events: none; background: transparent;
@@ -928,7 +1038,7 @@ const STYLE = `
    * is near-black, the one exception to bone text: bone on orange can't be read.
    */
   .nye-cta {
-    --cta-ink: #1c0c03;
+    --cta-ink: #fff;
     position: relative; overflow: hidden; isolation: isolate; flex: 1; height: 56px; border-radius: 999px; border: 0;
     background: #f04a12; color: var(--cta-ink); cursor: pointer; touch-action: manipulation;
     font-family: var(--font-body); font-weight: 700; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
@@ -969,7 +1079,7 @@ const STYLE = `
   }
   @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
   .nye-cta-label {
-    position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 190, 150, 0.45);
+    position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(90, 18, 0, 0.5);
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; gap: min(10px, 3.4cqi); white-space: nowrap;
   }
   /*
