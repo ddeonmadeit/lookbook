@@ -151,3 +151,14 @@ loads. To swap the flyer, make a new animated WebP from the video (810×1080,
 24 fps, e.g. `ffmpeg -i flyer.mp4 -an -vf "fps=24,scale=810:1080" -c:v
 libwebp_anim -loop 0 -quality 82 flyer.webp`), replace those two files and
 `public/nye/og.png`, the link preview.
+
+**The rooftop clip** under the tickets is `src/assets/nye/rooftop.mp4` (silent,
+720 px wide, ~750 KB), downloaded into memory as soon as the page has loaded so
+it plays the moment anyone scrolls to it. Phones that won't play video by
+themselves (iPhone Low Power Mode, some in-app browsers) are detected up front
+and get `rooftop-fallback.webp`, an animated copy that always loops, instead;
+`rooftop-poster.jpg` shows until either is ready. To swap the clip, replace all
+three (e.g. `ffmpeg -i clip.mov -an -vf "fps=30,scale=720:-2" -c:v libx264
+-crf 28 -preset veryslow -movflags +faststart rooftop.mp4`, and for the copy
+`-vf "fps=15,scale=540:-2" -c:v libwebp_anim -loop 0 -quality 80`). Playing a
+clip from memory needs `media-src 'self' blob:` in the CSP in `index.html`.
