@@ -3,7 +3,7 @@ import { Navbar } from "@/components/Navbar";
 
 const About = () => {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="h-full overflow-y-auto overscroll-contain bg-background text-foreground">
       <Navbar sticky={true} glassEffect={true} />
 
       <main className="pt-20 px-6 pb-32 max-w-2xl mx-auto">
