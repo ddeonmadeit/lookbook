@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
 import { supabase } from "@/integrations/supabase/client";
-import { afterPageLoad, canAutoplay } from "@/lib/autoplay";
+import { afterPageLoad } from "@/lib/pageLoad";
 import KnotsMark from "@/components/KnotsMark";
 import {
   type Availability,
@@ -29,6 +29,7 @@ import flyerPoster from "@/assets/nye/flyer-poster.jpg";
 import rooftopVideo from "@/assets/nye/rooftop.mp4";
 import rooftopFallback from "@/assets/nye/rooftop-fallback.webp";
 import rooftopPoster from "@/assets/nye/rooftop-poster.jpg";
+import loadingSpinner from "@/assets/loading-spinner.gif";
 
 /**
  * supabase.functions.invoke() reports any non-2xx as a generic error and
@@ -140,37 +141,24 @@ function Flyer() {
 const ROOFTOP_ALT = "The rooftop on New Year's Eve: the city skyline and fireworks over Sydney";
 
 /**
- * The rooftop clip under the tickets: silent (no audio track at all), looping,
- * no controls. The page first asks the phone whether it will play video by
- * itself; one that won't (iPhone Low Power Mode, some in-app browsers) gets an
- * animated copy that always loops instead. Whichever it is downloads as soon
- * as the page has loaded, so it's ready by the time anyone scrolls down. Phones
- * can still stop a playing video (switching apps, scrolling away), so it
- * restarts itself whenever it's on screen and not moving, and falls back to
- * the animated copy if it won't go.
+ * The rooftop clip under the tickets: silent (no audio track at all), looping, no controls. It
+ * downloads whole as soon as the page has loaded, so it's ready by the time anyone scrolls down,
+ * and plays from memory while it's on screen. The store's loading spinner shows until it's actually
+ * moving. A phone that won't play video by itself (iPhone Low Power Mode, some in-app browsers)
+ * gets an animated copy at the same frame rate instead, and so does one where the video won't move.
  */
 function RooftopLoop() {
   const ref = useRef<HTMLVideoElement>(null);
-  // "ask": finding out whether this phone plays video by itself. "image": it won't (Low Power Mode
-  // and the like), so the animated copy, which always moves.
-  const [mode, setMode] = useState<"ask" | "video" | "image">("ask");
-  const [videoSrc, setVideoSrc] = useState<string>();
-  const [imageSrc, setImageSrc] = useState<string>();
+  const [asImage, setAsImage] = useState(false);
+  const [src, setSrc] = useState<string>();
+  // Which one has shown itself: the video once it's moving, the animated copy once it's loaded.
+  const [shown, setShown] = useState<"video" | "image" | null>(null);
+  const showing = shown === (asImage ? "image" : "video");
 
-  useEffect(() => {
-    let live = true;
-    canAutoplay().then((ok) => live && setMode((m) => (m === "ask" ? (ok ? "video" : "image") : m)));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  // Download whichever this phone will show as soon as the page itself has loaded, so it's ready
-  // before anyone scrolls down. The clip comes down whole and plays from memory: it starts the
+  // Download the clip whole once the page itself has loaded. Playing from memory, it starts the
   // moment it's on screen and loops without ever waiting on the network.
   useEffect(() => {
-    if (mode === "ask") return;
-    if (mode === "image") return afterPageLoad(() => setImageSrc(rooftopFallback));
+    if (asImage) return;
     let live = true;
     let url: string | undefined;
     const stop = new AbortController();
@@ -183,10 +171,10 @@ function RooftopLoop() {
         .then((blob) => {
           if (!live) return;
           url = URL.createObjectURL(blob.type === "video/mp4" ? blob : new Blob([blob], { type: "video/mp4" }));
-          setVideoSrc(url);
+          setSrc(url);
         })
         // Couldn't fetch it whole: stream it instead.
-        .catch(() => live && setVideoSrc(rooftopVideo));
+        .catch(() => live && setSrc(rooftopVideo));
     });
     return () => {
       live = false;
@@ -194,34 +182,40 @@ function RooftopLoop() {
       stop.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [mode]);
+  }, [asImage]);
 
-  // Play while on screen, rest while not.
+  // Play while it's on screen, rest while it's not.
   useEffect(() => {
     const video = ref.current;
-    if (mode !== "video" || !video || !videoSrc) return;
+    if (asImage || !video || !src) return;
     video.defaultMuted = true;
     video.muted = true;
     video.setAttribute("muted", "");
     let onScreen = false;
     let lastTime = -1;
     let stuckFor = 0;
+    const giveUp = () => {
+      // Couldn't play from memory: try streaming it before settling for the animated copy.
+      if (src.startsWith("blob:")) setSrc(rooftopVideo);
+      else setAsImage(true);
+    };
     const play = () => {
       if (!onScreen || document.hidden) return;
       video.play()?.catch((err: DOMException) => {
-        // An AbortError is only our own pause getting in first; anything else means it won't play.
-        if (err?.name !== "AbortError") setMode("image");
+        // Refused outright (Low Power Mode): it never will. An AbortError is just our own pause
+        // getting in first.
+        if (err?.name === "NotAllowedError") setAsImage(true);
+        else if (err?.name !== "AbortError") giveUp();
       });
     };
-    const seen = new IntersectionObserver(
-      ([entry]) => {
-        onScreen = entry.isIntersecting;
-        if (onScreen) play();
-        else video.pause();
-      },
-      { rootMargin: "120px 0px" },
-    );
+    // Only ever asked to play once it's actually on screen: phones won't start a video they can't see.
+    const seen = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      if (onScreen) play();
+      else video.pause();
+    });
     seen.observe(video);
+    const onMoving = () => video.currentTime > 0 && !video.paused && setShown("video");
     // Stopped by the phone rather than by us: start again.
     const onPause = () => onScreen && !document.hidden && setTimeout(play, 250);
     const onEnded = () => {
@@ -229,6 +223,7 @@ function RooftopLoop() {
       play();
     };
     const onVisible = () => !document.hidden && play();
+    video.addEventListener("timeupdate", onMoving);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
     video.addEventListener("canplay", play);
@@ -246,28 +241,36 @@ function RooftopLoop() {
         return;
       }
       stuckFor += 1;
-      if (stuckFor >= (video.readyState >= 2 ? 3 : 8)) setMode("image");
+      if (stuckFor >= (video.readyState >= 2 ? 3 : 8)) setAsImage(true);
       else play();
     }, 1000);
     return () => {
       seen.disconnect();
       clearInterval(watchdog);
+      video.removeEventListener("timeupdate", onMoving);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("canplay", play);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [mode, videoSrc]);
+  }, [asImage, src]);
 
   return (
     <div className="nye-rooftop">
-      {mode === "image" ? (
-        imageSrc && <img src={imageSrc} alt={ROOFTOP_ALT} className="nye-rooftop-media" decoding="async" draggable={false} />
+      {asImage ? (
+        <img
+          src={rooftopFallback}
+          alt={ROOFTOP_ALT}
+          className="nye-rooftop-media"
+          decoding="async"
+          draggable={false}
+          onLoad={() => setShown("image")}
+        />
       ) : (
         <video
           ref={ref}
           className="nye-rooftop-media"
-          src={videoSrc}
+          src={src}
           poster={rooftopPoster}
           muted
           loop
@@ -277,8 +280,16 @@ function RooftopLoop() {
           disablePictureInPicture
           tabIndex={-1}
           aria-label={ROOFTOP_ALT}
-          onError={() => videoSrc && setMode("image")}
+          onError={() => {
+            if (src?.startsWith("blob:")) setSrc(rooftopVideo);
+            else if (src) setAsImage(true);
+          }}
         />
+      )}
+      {!showing && (
+        <div className="nye-rooftop-loading">
+          <img src={loadingSpinner} alt="Loading" className="nye-rooftop-spinner" draggable={false} />
+        </div>
       )}
     </div>
   );
@@ -609,7 +620,7 @@ const Nye = () => {
       )}
       <button type="button" className="nye-cta" onClick={start} disabled={!canBuy}>
         <span className="nye-cta-flow" aria-hidden />
-        <span className="nye-cta-label">{buyLabel}</span>
+        <span className="nye-cta-label" data-long={dollars(total).length > 4 || undefined}>{buyLabel}</span>
       </button>
     </div>
   );
@@ -878,6 +889,13 @@ const STYLE = `
     box-shadow: inset 0 0 0 1px var(--line);
     -webkit-touch-callout: none; user-select: none;
   }
+  /* While it loads: the still frame dimmed, with the store's loading spinner (black on clear) turned
+     the page's bone colour on top. */
+  .nye-rooftop-loading {
+    position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; pointer-events: none;
+    background: rgba(6, 4, 3, 0.55);
+  }
+  .nye-rooftop-spinner { width: 40px; height: 40px; object-fit: contain; filter: invert(1) sepia(0.18) brightness(0.96); }
   .nye-rooftop-media {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
     pointer-events: none; background: transparent;
@@ -952,17 +970,22 @@ const STYLE = `
   @keyframes nyeShine { 0% { transform: translateX(-130%) skewX(-18deg); } 50%, 100% { transform: translateX(360%) skewX(-18deg); } }
   .nye-cta-label {
     position: relative; z-index: 1; text-shadow: 0 1px 0 rgba(255, 190, 150, 0.45);
-    display: inline-flex; align-items: baseline; justify-content: center; gap: 0.5em; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; gap: min(10px, 3.4cqi); white-space: nowrap;
   }
-  /* "BE THERE": bigger and bolder, in the display face, stretched taller (height only, same width),
-     growing evenly up and down from the middle of the capitals. The price keeps the button's own
-     style and just drops to sit on the stretched text's baseline. */
-  .nye-cta-label { --stretch: 1.4; }
+  /*
+   * "BE THERE" (display face) and the price share one holder, centred in the pill: each line box is
+   * trimmed to 1em and nudged so the middle of its capitals and figures sits on the pill's middle.
+   * Both scale with the pill's width (cqi), with a smaller step for four-figure totals.
+   */
+  .nye-cta { container-type: inline-size; display: flex; align-items: center; justify-content: center; }
   .nye-cta-main {
-    font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: 0.06em; line-height: 1.5;
-    display: inline-block; transform: scaleY(var(--stretch)); transform-origin: 50% 0.684em;
+    font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; line-height: 1;
+    font-size: 23px; font-size: clamp(19px, 10.4cqi, 28px);
+    transform: translateY(0.03em);
   }
-  .nye-cta-price { font-size: 13px; display: inline-block; transform: translateY(calc((var(--stretch) - 1) * 7px)); }
+  .nye-cta-price { line-height: 1; font-size: 16px; font-size: clamp(13px, 7.2cqi, 19px); transform: translateY(0.04em); }
+  .nye-cta-label[data-long] .nye-cta-main { font-size: 19px; font-size: clamp(15px, 8.6cqi, 24px); }
+  .nye-cta-label[data-long] .nye-cta-price { font-size: 14px; font-size: clamp(11px, 6cqi, 16px); }
   @media (hover: hover) { .nye-cta:hover:not(:disabled) { transform: translateY(-1px); } }
   .nye-cta:active:not(:disabled) {
     transform: translateY(1px) scale(0.985);
