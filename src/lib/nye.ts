@@ -14,6 +14,7 @@ export const NYE_EVENT = {
   time: "6pm – 1am",
   venue: "175 Cathedral St, Woolloomooloo",
   highlights: "Shisha • DJ's • View of Fireworks",
+  music: "♫ HIP-HOP • R&B • AFROBEATS • HOUSE • TRAP & MORE...",
   suburb: "Woolloomooloo",
 };
 

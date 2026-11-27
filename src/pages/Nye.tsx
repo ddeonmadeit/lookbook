@@ -25,6 +25,9 @@ import {
 
 import flyerLoop from "@/assets/nye/flyer.webp";
 import flyerPoster from "@/assets/nye/flyer-poster.jpg";
+import rooftopVideo from "@/assets/nye/rooftop.mp4";
+import rooftopFallback from "@/assets/nye/rooftop-fallback.webp";
+import rooftopPoster from "@/assets/nye/rooftop-poster.jpg";
 
 /**
  * supabase.functions.invoke() reports any non-2xx as a generic error and
@@ -129,6 +132,103 @@ function Flyer() {
       <div ref={ref} className="nye-flyer" onPointerMove={tilt} onPointerLeave={reset}>
         <FlyerLoop />
       </div>
+    </div>
+  );
+}
+
+const ROOFTOP_ALT = "The rooftop on New Year's Eve: the city skyline and fireworks over Sydney";
+
+/**
+ * The rooftop clip under the tickets: silent (no audio track at all), looping,
+ * no controls. Phones can stop a looping video — power saving, switching
+ * apps, scrolling away — so it restarts itself whenever it's on screen and
+ * not moving, and if a phone won't play video at all (iPhone Low Power Mode,
+ * some in-app browsers) an animated copy that always loops takes its place.
+ * It only loads as it comes near the screen.
+ */
+function RooftopLoop() {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [asImage, setAsImage] = useState(false);
+  const [near, setNear] = useState(false);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || asImage) return;
+    video.defaultMuted = true;
+    video.muted = true;
+    video.setAttribute("muted", "");
+    let onScreen = false;
+    let lastTime = -1;
+    let stuckFor = 0;
+    const play = () => {
+      // Nothing to play until the file starts loading (it waits until the clip is near the screen).
+      if (!onScreen || document.hidden || !video.getAttribute("src")) return;
+      video.play()?.catch((err: DOMException) => {
+        if (err?.name === "NotAllowedError") setAsImage(true);
+      });
+    };
+    const seen = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting || entry.intersectionRatio > 0) setNear(true);
+        onScreen = entry.intersectionRatio > 0.15;
+        if (onScreen) play();
+        else video.pause();
+      },
+      { rootMargin: "400px 0px", threshold: [0, 0.15] },
+    );
+    seen.observe(video);
+    // Stopped by the phone rather than by us: start again.
+    const onPause = () => onScreen && !document.hidden && setTimeout(play, 250);
+    const onEnded = () => {
+      video.currentTime = 0;
+      play();
+    };
+    const onVisible = () => !document.hidden && play();
+    video.addEventListener("pause", onPause);
+    video.addEventListener("ended", onEnded);
+    video.addEventListener("canplay", play);
+    document.addEventListener("visibilitychange", onVisible);
+    // On screen but not moving: nudge it; still stuck after a few tries, use the animated copy.
+    const watchdog = setInterval(() => {
+      if (!onScreen || document.hidden || video.readyState < 2) return;
+      if (video.currentTime === lastTime) {
+        stuckFor += 1;
+        if (stuckFor >= 4) setAsImage(true);
+        else play();
+      } else stuckFor = 0;
+      lastTime = video.currentTime;
+    }, 1500);
+    return () => {
+      seen.disconnect();
+      clearInterval(watchdog);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onEnded);
+      video.removeEventListener("canplay", play);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [asImage]);
+
+  return (
+    <div className="nye-rooftop">
+      {asImage ? (
+        <img src={rooftopFallback} alt={ROOFTOP_ALT} className="nye-rooftop-media" loading="lazy" decoding="async" draggable={false} />
+      ) : (
+        <video
+          ref={ref}
+          className="nye-rooftop-media"
+          src={near ? rooftopVideo : undefined}
+          poster={rooftopPoster}
+          muted
+          loop
+          playsInline
+          preload={near ? "auto" : "none"}
+          controls={false}
+          disablePictureInPicture
+          tabIndex={-1}
+          aria-label={ROOFTOP_ALT}
+          onError={() => near && setAsImage(true)}
+        />
+      )}
     </div>
   );
 }
@@ -542,6 +642,9 @@ const Nye = () => {
               card, without leaving this page; your ticket appears here straight away.
             </p>
           </div>
+
+          <div className="nye-music-fit"><p className="nye-music">{NYE_EVENT.music}</p></div>
+          <RooftopLoop />
         </section>
       </main>
 
@@ -623,7 +726,7 @@ const STYLE = `
 
   .nye-main {
     max-width: 1180px; margin: 0 auto; padding: 12px 20px 36px;
-    display: grid; gap: 18px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
   }
   @media (min-width: 900px) {
     .nye-main {
@@ -708,6 +811,32 @@ const STYLE = `
   .nye-tier-price { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 24px; line-height: 1; letter-spacing: -0.01em; color: var(--bone); }
 
   .nye-panel-buy { margin-top: 16px; }
+
+  /* Under the tickets: the music, then the rooftop clip. */
+  /* One line at any width: the type scales with the space it has. */
+  .nye-music-fit { margin-top: 22px; max-width: 460px; container-type: inline-size; }
+  .nye-music {
+    margin: 0; color: var(--bone);
+    font-size: min(14px, calc((100vw - 40px) / 31.5)); font-size: min(14px, calc(100cqi / 31.5));
+    font-weight: 500; letter-spacing: 0.04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nye-rooftop {
+    position: relative; margin-top: 12px; max-width: 460px; aspect-ratio: 720 / 822;
+    border-radius: 12px; overflow: hidden; background: #0b0908 url('${rooftopPoster}') center / cover no-repeat;
+    box-shadow: inset 0 0 0 1px var(--line);
+    -webkit-touch-callout: none; user-select: none;
+  }
+  .nye-rooftop-media {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+    pointer-events: none; background: transparent;
+  }
+  /* Never any player chrome. */
+  .nye-rooftop-media::-webkit-media-controls,
+  .nye-rooftop-media::-webkit-media-controls-panel,
+  .nye-rooftop-media::-webkit-media-controls-overlay-play-button,
+  .nye-rooftop-media::-webkit-media-controls-start-playback-button,
+  .nye-rooftop-media::-webkit-media-controls-enclosure { display: none !important; -webkit-appearance: none; opacity: 0; }
   .nye-message { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--bone); }
   .nye-fine { margin: 14px 0 0; font-size: 11px; line-height: 1.6; color: var(--taupe); }
 
