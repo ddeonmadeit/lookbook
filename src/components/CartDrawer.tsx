@@ -2,27 +2,12 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, Trash2, Loader2, X } from "lucide-react";
+import { PurseIcon } from "@/components/StoreIcons";
 import { useCartStore } from "@/stores/cartStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 // Bag icon matching yeezy.com style
-const BagIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <path d="M16 10a4 4 0 01-8 0" />
-  </svg>
-);
-
 export const CartDrawer = () => {
   const navigate = useNavigate();
   const { cartOpen: isOpen, setCartOpen: setIsOpen, menuOpen } = useUIStore();
@@ -56,11 +41,12 @@ export const CartDrawer = () => {
       {/* Trigger button in navbar */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative w-8 h-8 flex items-center justify-center text-foreground hover:text-muted-foreground transition-colors"
+        aria-label={totalItems > 0 ? `Bag, ${totalItems} item${totalItems === 1 ? "" : "s"}` : "Bag"}
+        className="relative w-8 h-8 flex items-center justify-center text-black hover:text-muted-foreground transition-colors"
       >
-        <BagIcon className="h-[18px] w-[18px]" />
+        <PurseIcon className="h-[19px] w-[19px]" />
         {totalItems > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-foreground text-background text-[9px] font-body font-medium flex items-center justify-center">
+          <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-foreground text-background ring-2 ring-background text-[9px] font-body font-medium flex items-center justify-center">
             {totalItems}
           </span>
         )}
@@ -99,7 +85,7 @@ export const CartDrawer = () => {
           {items.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <BagIcon className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
+                <PurseIcon className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground font-body text-[11px] uppercase tracking-[0.1em]">Your bag is empty</p>
               </div>
             </div>

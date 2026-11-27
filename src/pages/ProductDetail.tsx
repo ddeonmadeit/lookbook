@@ -4,8 +4,9 @@ import DOMPurify from "dompurify";
 import { type ShopifyProduct } from "@/lib/shopify";
 import { getProducts } from "@/lib/products";
 import { useCartStore } from "@/stores/cartStore";
+import { HangerIcon } from "@/components/StoreIcons";
 import { Navbar } from "@/components/Navbar";
-import { Plus, Minus, Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
+import { Eye, EyeOff, ChevronDown, HelpCircle } from "lucide-react";
 import loadingSpinner from "@/assets/loading-spinner.gif";
 import RestockReminder from "@/components/RestockReminder";
 
@@ -507,10 +508,11 @@ const ProductDetail = () => {
             <div className="flex items-center gap-0.5">
               <button
                 onClick={toggleSizes}
-                className="w-9 h-9 flex items-center justify-center text-foreground active:scale-90 transition-transform"
+                className={`w-9 h-9 flex items-center justify-center rounded-full text-foreground active:scale-90 transition-all ${showSizes ? "bg-foreground/10" : ""}`}
                 aria-label={showSizes ? "Hide options" : "Show options"}
+                aria-pressed={showSizes}
               >
-                {showSizes ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                <HangerIcon className="h-[18px] w-[18px]" />
               </button>
               <button
                 onClick={toggleDetails}
