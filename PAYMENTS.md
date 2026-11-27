@@ -153,12 +153,13 @@ libwebp_anim -loop 0 -quality 82 flyer.webp`), replace those two files and
 `public/nye/og.png`, the link preview.
 
 **The rooftop clip** under the tickets is `src/assets/nye/rooftop.mp4` (silent,
-720 px wide, ~750 KB), downloaded into memory as soon as the page has loaded so
-it plays the moment anyone scrolls to it. Phones that won't play video by
-themselves (iPhone Low Power Mode, some in-app browsers) are detected up front
-and get `rooftop-fallback.webp`, an animated copy that always loops, instead;
-`rooftop-poster.jpg` shows until either is ready. To swap the clip, replace all
-three (e.g. `ffmpeg -i clip.mov -an -vf "fps=30,scale=720:-2" -c:v libx264
--crf 28 -preset veryslow -movflags +faststart rooftop.mp4`, and for the copy
-`-vf "fps=15,scale=540:-2" -c:v libwebp_anim -loop 0 -quality 80`). Playing a
+720 px wide, 30 fps, ~750 KB), downloaded into memory as soon as the page has
+loaded so it plays the moment anyone scrolls to it; the store's loading spinner
+(`src/assets/loading-spinner.gif`, turned bone) shows over the dimmed
+`rooftop-poster.jpg` until it's moving. Phones that won't play it (iPhone Low
+Power Mode, some in-app browsers) get `rooftop-fallback.webp`, an animated copy
+at the same 30 fps that always loops. To swap the clip, replace all three
+(e.g. `ffmpeg -i clip.mov -an -vf "fps=30,scale=720:-2" -c:v libx264 -crf 28
+-preset veryslow -movflags +faststart rooftop.mp4`, and for the copy
+`-vf "fps=30,scale=540:-2" -c:v libwebp_anim -loop 0 -quality 80`). Playing a
 clip from memory needs `media-src 'self' blob:` in the CSP in `index.html`.
