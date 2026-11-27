@@ -156,10 +156,14 @@ libwebp_anim -loop 0 -quality 82 flyer.webp`), replace those two files and
 720 px wide, 30 fps, ~750 KB), downloaded into memory as soon as the page has
 loaded so it plays the moment anyone scrolls to it; the store's loading spinner
 (`src/assets/loading-spinner.gif`, turned bone) shows over the dimmed
-`rooftop-poster.jpg` until it's moving. Phones that won't play it (iPhone Low
-Power Mode, some in-app browsers) get `rooftop-fallback.webp`, an animated copy
-at the same 30 fps that always loops. To swap the clip, replace all three
-(e.g. `ffmpeg -i clip.mov -an -vf "fps=30,scale=720:-2" -c:v libx264 -crf 28
--preset veryslow -movflags +faststart rooftop.mp4`, and for the copy
-`-vf "fps=30,scale=540:-2" -c:v libwebp_anim -loop 0 -quality 80`). Playing a
-clip from memory needs `media-src 'self' blob:` in the CSP in `index.html`.
+`rooftop-poster.jpg` until it's ready. Phones that won't play video by
+themselves (iPhone Low Power Mode, some in-app browsers) get the same clip as
+30 fps stills drawn on a canvas by the clock (`rooftop-frames.bin`: WebP stills
+back to back), so it always runs at true speed (an animated image would play in
+slow motion on a throttled phone); the first tap anywhere on the page switches
+them to the real video. To swap the clip, replace all three: e.g.
+`ffmpeg -i clip.mov -an -vf "fps=30,scale=720:-2" -c:v libx264 -crf 28 -preset
+veryslow -movflags +faststart rooftop.mp4`; for the stills,
+`ffmpeg -i rooftop.mp4 -vf "fps=30,scale=540:-2" -c:v libwebp -quality 72 f%04d.webp`
+then `cat f*.webp > rooftop-frames.bin`. Playing a clip from memory needs
+`media-src 'self' blob:` in the CSP in `index.html`.
