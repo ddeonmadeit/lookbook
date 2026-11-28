@@ -5,6 +5,7 @@ import { Loader2, Check } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { supabase } from "@/integrations/supabase/client";
 import logoSrc from "@/assets/logo.gif";
+import { BottomFade } from "@/components/BottomFade";
 
 interface Address {
   line1: string | null;
@@ -95,6 +96,7 @@ const CheckoutSuccess = () => {
           {children}
         </div>
       </div>
+      <BottomFade />
     </div>
   );
 

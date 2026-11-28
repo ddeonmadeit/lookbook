@@ -20,6 +20,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { supabase } from "@/integrations/supabase/client";
 import { COUNTRIES } from "@/lib/countries";
+import { BottomFade } from "@/components/BottomFade";
 
 const COUNTRY_KEY = "knots-ship-country";
 const POSTCODE_KEY = "knots-ship-postcode";
@@ -527,6 +528,7 @@ const Checkout = () => {
           </>
         )}
       </div>
+      <BottomFade />
     </div>
   );
 };
