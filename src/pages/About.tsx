@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
+import { BottomFade } from "@/components/BottomFade";
 
 const About = () => {
   return (
@@ -39,6 +40,7 @@ const About = () => {
           Explore
         </Link>
       </div>
+      <BottomFade />
     </div>
   );
 };

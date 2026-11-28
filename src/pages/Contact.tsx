@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { BottomFade } from "@/components/BottomFade";
 
 const Contact = () => {
   const [name, setName] = useState("");
@@ -148,6 +149,7 @@ const Contact = () => {
           Explore
         </Link>
       </div>
+      <BottomFade />
     </div>
   );
 };

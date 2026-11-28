@@ -4,6 +4,7 @@ import { getStorefront } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { Navbar } from "@/components/Navbar";
 import loadingSpinner from "@/assets/loading-spinner.gif";
+import { BottomFade } from "@/components/BottomFade";
 
 const COLUMN_STEPS = [5, 4, 3]; // 5 cols (zoom out) → 3 cols (zoom in)
 const DEFAULT_INDEX = 2; // 3 columns default
@@ -128,6 +129,7 @@ const Index = () => {
           ))}
         </div>
       )}
+      <BottomFade />
     </div>
   );
 };
