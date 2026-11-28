@@ -6,11 +6,19 @@ stripe.com and never has to complete anything by email.
 
 The flow:
 
-1. Shopper picks a delivery country on our checkout page.
-2. We quote real shipping from Sydney (see below) and show
+1. Shopper fills in where it's going on our checkout page, without typing
+   it all out: suggestions appear as they type the street (pick one and the
+   suburb, state and postcode fill in), and every field is tagged for
+   Safari/Chrome AutoFill, so a saved contact card fills it in one tap.
+   Suggestions come from Photon (photon.komoot.io, free OpenStreetMap
+   geocoding, no key; allowed in the CSP's `connect-src`). If it's ever down,
+   typing the address still works.
+2. We quote real shipping from Sydney (see below) for that address and show
    subtotal / shipping / total before they commit.
-3. They pay inline. Card details go straight to Stripe — they never touch our
-   servers.
+3. They pay inline in Stripe's embedded form, which opens with the shipping
+   address already filled in (`create-checkout` puts it on a Stripe customer
+   for the session), so it's just email and card, or Apple Pay / Link. Card
+   details go straight to Stripe — they never touch our servers.
 4. Stripe's signed webhook marks the order paid and decrements stock.
 
 Prices, weights and the shipping charge are all recalculated server-side, so a

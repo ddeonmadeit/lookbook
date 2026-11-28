@@ -21,6 +21,9 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { supabase } from "@/integrations/supabase/client";
 import { COUNTRIES } from "@/lib/countries";
 import { BottomFade } from "@/components/BottomFade";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import type { AddressSuggestion } from "@/lib/addressSearch";
+import loadingSpinner from "@/assets/loading-spinner.gif";
 
 const COUNTRY_KEY = "knots-ship-country";
 const POSTCODE_KEY = "knots-ship-postcode";
@@ -72,6 +75,7 @@ async function functionError(error: unknown, data: unknown, fallback: string) {
 const Checkout = () => {
   const { items, clearCart } = useCartStore();
   const paymentsEnabled = useSettingsStore((s) => s.paymentsEnabled);
+  const settingsLoaded = useSettingsStore((s) => s.loaded);
 
   const [country, setCountry] = useState<string>(
     () => localStorage.getItem(COUNTRY_KEY) || "AU",
@@ -80,6 +84,8 @@ const Checkout = () => {
     () => localStorage.getItem(POSTCODE_KEY) || "",
   );
   const [service, setService] = useState<"standard" | "express">("standard");
+  // Where it's going. Picked from suggestions (or AutoFill), then handed to Stripe already filled in.
+  const [ship, setShip] = useState({ name: "", line1: "", line2: "", city: "", region: "" });
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -122,6 +128,28 @@ const Checkout = () => {
   // country alone.
   const needsPostcode = country === "AU";
   const postcodeReady = !needsPostcode || /^\d{4}$/.test(postcode.trim());
+  const addressReady =
+    postcodeReady &&
+    ship.name.trim().length > 1 &&
+    ship.line1.trim().length > 2 &&
+    ship.city.trim().length > 1;
+
+  const shipField =
+    (field: keyof typeof ship) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setShip((s) => ({ ...s, [field]: e.target.value }));
+
+  const pickAddress = (a: AddressSuggestion) => {
+    setShip((s) => ({ ...s, line1: a.line1, city: a.city, region: a.state }));
+    setPostcode(a.postcode);
+  };
+
+  // A different country means a different address: start it afresh.
+  const changeCountry = (code: string) => {
+    if (code === country) return;
+    setCountry(code);
+    setShip((s) => ({ ...s, line1: "", line2: "", city: "", region: "" }));
+    setPostcode("");
+  };
 
   const selected =
     quote?.options.find((o) => o.service === service) ?? quote?.options[0] ?? null;
@@ -173,6 +201,17 @@ const Checkout = () => {
           items: cartLines(),
           country,
           postcode: postcode.trim(),
+          shipping: {
+            name: ship.name.trim(),
+            address: {
+              line1: ship.line1.trim(),
+              line2: ship.line2.trim(),
+              city: ship.city.trim(),
+              state: ship.region.trim(),
+              postal_code: postcode.trim(),
+              country,
+            },
+          },
           return_url: `${window.location.origin}/checkout/success`,
         },
       });
@@ -297,6 +336,15 @@ const Checkout = () => {
 
   const rowLabel = "font-body text-[11px] uppercase tracking-[0.1em]";
 
+  // Until settings arrive we don't know whether it's card payment or the order form: show neither.
+  if (!settingsLoaded) {
+    return (
+      <div className="h-full bg-background flex items-center justify-center">
+        <img src={loadingSpinner} alt="Loading" className="w-16 h-16 object-contain" />
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-background">
       <Navbar />
@@ -339,12 +387,11 @@ const Checkout = () => {
                 rather than being a surprise at the payment step. */}
             {!clientSecret && (
               <div className="mt-5 space-y-3">
+                <p className="font-display text-[11px] uppercase tracking-[0.2em]">Ship to</p>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
-                    Deliver to
-                  </Label>
-                  <Select value={country} onValueChange={setCountry}>
-                    <SelectTrigger className="font-body text-[12px]">
+                  <Label className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">Country</Label>
+                  <Select value={country} onValueChange={changeCountry}>
+                    <SelectTrigger className="font-body text-[12px]" aria-label="Country">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
@@ -357,29 +404,95 @@ const Checkout = () => {
                   </Select>
                 </div>
 
-                {needsPostcode && (
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="postcode"
-                      className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground"
-                    >
+                <div className="space-y-1.5">
+                  <Label htmlFor="ship-name" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                    Full name
+                  </Label>
+                  <Input
+                    id="ship-name"
+                    value={ship.name}
+                    onChange={shipField("name")}
+                    autoComplete="shipping name"
+                    className="font-body text-[12px]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="ship-line1" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                    Address
+                  </Label>
+                  <AddressAutocomplete
+                    id="ship-line1"
+                    value={ship.line1}
+                    country={country}
+                    onChange={(line1) => setShip((s) => ({ ...s, line1 }))}
+                    onPick={pickAddress}
+                    placeholder="Start typing your address"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="ship-line2" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                    Apartment, unit <span className="normal-case tracking-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="ship-line2"
+                    value={ship.line2}
+                    onChange={shipField("line2")}
+                    autoComplete="shipping address-line2"
+                    className="font-body text-[12px]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-[1fr_76px_92px] gap-2">
+                  <div className="space-y-1.5 min-w-0">
+                    <Label htmlFor="ship-city" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                      {needsPostcode ? "Suburb" : "City"}
+                    </Label>
+                    <Input
+                      id="ship-city"
+                      value={ship.city}
+                      onChange={shipField("city")}
+                      autoComplete="shipping address-level2"
+                      className="font-body text-[12px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <Label htmlFor="ship-region" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
+                      State
+                    </Label>
+                    <Input
+                      id="ship-region"
+                      value={ship.region}
+                      onChange={shipField("region")}
+                      autoComplete="shipping address-level1"
+                      className="font-body text-[12px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <Label htmlFor="postcode" className="text-[10px] uppercase tracking-[0.15em] font-body text-muted-foreground">
                       Postcode
                     </Label>
                     <Input
                       id="postcode"
                       value={postcode}
-                      onChange={(e) => setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      inputMode="numeric"
-                      autoComplete="postal-code"
-                      placeholder="2000"
-                      className="font-body text-[12px] tracking-[0.1em]"
+                      onChange={(e) =>
+                        setPostcode(
+                          needsPostcode
+                            ? e.target.value.replace(/\D/g, "").slice(0, 4)
+                            : e.target.value.toUpperCase().slice(0, 10),
+                        )
+                      }
+                      inputMode={needsPostcode ? "numeric" : "text"}
+                      autoComplete="shipping postal-code"
+                      className="font-body text-[12px] tracking-[0.06em]"
                     />
-                    <p className="font-body text-[10px] text-muted-foreground">
-                      {postcodeReady && quote
-                        ? `Shipping from Sydney to ${quote.zone_label}.`
-                        : "We post from Sydney — your postcode sets the rate."}
-                    </p>
                   </div>
+                </div>
+                {quote && (
+                  <p className="font-body text-[10px] text-muted-foreground">
+                    Shipping from Sydney to {quote.zone_label}.
+                  </p>
                 )}
 
                 {/* Service choice. Both are offered again inside the payment
@@ -466,13 +579,13 @@ const Checkout = () => {
               <div className="mt-6 space-y-4">
                 <Button
                   onClick={startPayment}
-                  disabled={starting || quoting || !selected || !postcodeReady}
+                  disabled={starting || quoting || !selected || !addressReady}
                   className="w-full h-12 text-[11px] uppercase tracking-[0.2em] font-body"
                 >
                   {starting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : !postcodeReady ? (
-                    "Enter your postcode"
+                  ) : !addressReady ? (
+                    "Add your delivery address"
                   ) : (
                     <>
                       <Lock className="w-3.5 h-3.5 mr-2" /> Pay {selected ? money(selected.total) : ""}
